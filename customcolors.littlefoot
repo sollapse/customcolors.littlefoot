@@ -4,7 +4,9 @@
 
   Allows for customizing per-key colors for on and off states and the octave buttons, along with fading between key colors when active.
   Only supports single channel MIDI mode for now.
-  
+
+  Uses portions of the default ROLI LUMI Key script as a guide.
+  https://github.com/benob/LUMI-lights/blob/master/littlefoot/LUMI%20Keys%20Block%20Default%20Program.littlefoot
 */
 
 /*
