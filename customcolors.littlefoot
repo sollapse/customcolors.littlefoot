@@ -1,0 +1,433 @@
+/*
+  customcolors.littlefoot LUMI Key/Piano M script
+  by sollapse/2025
+
+  Allows for customizing per-key colors for on and off states and the octave buttons, along with fading between key colors when active.
+  Only supports single channel MIDI mode for now.
+  
+*/
+
+/*
+<metadata description="">
+    <groups>
+    
+       <group name="offColors" displayName="Off Colors" />
+       <group name="onColors" displayName="On Colors" />
+       <group name="octColors" displayName="Octave Button Colors" />
+        
+    </groups>
+    <variables>
+        
+            <variable name="midiChan" displayName="MIDI Channel" type="int" min="1" max="16" value="1" />
+            <variable name="polyAT" displayName="Poly Aftertouch" type="bool" value="true" />
+            <variable name="toggleVel" displayName="Fixed Velocity Toggle" type="bool" value="false" />
+            <variable name="fixedVel" displayName="Fixed Velocity" type="int" min="0" max="127" value="93" />
+            <variable name="toggleVB" displayName="Velocity Brightness" type="bool" value="false" />
+            <variable name="fadeColors" displayName="Fade On/Off Colors" type="bool" value="false" />
+            <variable name="fadeInc" displayName="Fade Step" type="int" min="0" max="100" value="10" />
+            <variable group="offColors" name="offBright" displayName="Key Off Brightness" type="int" min="0" max="100" value="100" />
+            <variable group="offColors" name="keyOffCol0" displayName="Key 1" type="colour" value="0xFFFFFF" />
+            <variable group="offColors" name="keyOffCol1" displayName="Key 2" type="colour" value="0xFFFFFF" />
+            <variable group="offColors" name="keyOffCol2" displayName="Key 3" type="colour" value="0xFFFFFF" />
+            <variable group="offColors" name="keyOffCol3" displayName="Key 4" type="colour" value="0xFFFFFF" />
+            <variable group="offColors" name="keyOffCol4" displayName="Key 5" type="colour" value="0xFFFFFF" />
+            <variable group="offColors" name="keyOffCol5" displayName="Key 6" type="colour" value="0xFFFFFF" />
+            <variable group="offColors" name="keyOffCol6" displayName="Key 7" type="colour" value="0xFFFFFF" />
+            <variable group="offColors" name="keyOffCol7" displayName="Key 8" type="colour" value="0xFFFFFF" />
+            <variable group="offColors" name="keyOffCol8" displayName="Key 9" type="colour" value="0xFFFFFF" />
+            <variable group="offColors" name="keyOffCol9" displayName="Key 10" type="colour" value="0xFFFFFF" />
+            <variable group="offColors" name="keyOffCol10" displayName="Key 11" type="colour" value="0xFFFFFF" />
+            <variable group="offColors" name="keyOffCol11" displayName="Key 12" type="colour" value="0xFFFFFF" />
+            <variable group="offColors" name="keyOffCol12" displayName="Key 13" type="colour" value="0xFFFFFF" />
+            <variable group="offColors" name="keyOffCol13" displayName="Key 14" type="colour" value="0xFFFFFF" />
+            <variable group="offColors" name="keyOffCol14" displayName="Key 15" type="colour" value="0xFFFFFF" />
+            <variable group="offColors" name="keyOffCol15" displayName="Key 16" type="colour" value="0xFFFFFF" />
+            <variable group="offColors" name="keyOffCol16" displayName="Key 17" type="colour" value="0xFFFFFF" />
+            <variable group="offColors" name="keyOffCol17" displayName="Key 18" type="colour" value="0xFFFFFF" />
+            <variable group="offColors" name="keyOffCol18" displayName="Key 19" type="colour" value="0xFFFFFF" />
+            <variable group="offColors" name="keyOffCol19" displayName="Key 20" type="colour" value="0xFFFFFF" />
+            <variable group="offColors" name="keyOffCol20" displayName="Key 21" type="colour" value="0xFFFFFF" />
+            <variable group="offColors" name="keyOffCol21" displayName="Key 22" type="colour" value="0xFFFFFF" />
+            <variable group="offColors" name="keyOffCol22" displayName="Key 23" type="colour" value="0xFFFFFF" />
+            <variable group="offColors" name="keyOffCol23" displayName="Key 24" type="colour" value="0xFFFFFF" />
+            <variable group="onColors" name="onBright" displayName="Key On Brightness" type="int" min="0" max="100" value="100" />
+            <variable group="onColors" name="keyOnCol0" displayName="Key 1" type="colour" value="0xFFFFFF" />
+            <variable group="onColors" name="keyOnCol1" displayName="Key 2" type="colour" value="0xFFFFFF" />
+            <variable group="onColors" name="keyOnCol2" displayName="Key 3" type="colour" value="0xFFFFFF" />
+            <variable group="onColors" name="keyOnCol3" displayName="Key 4" type="colour" value="0xFFFFFF" />
+            <variable group="onColors" name="keyOnCol4" displayName="Key 5" type="colour" value="0xFFFFFF" />
+            <variable group="onColors" name="keyOnCol5" displayName="Key 6" type="colour" value="0xFFFFFF" />
+            <variable group="onColors" name="keyOnCol6" displayName="Key 7" type="colour" value="0xFFFFFF" />
+            <variable group="onColors" name="keyOnCol7" displayName="Key 8" type="colour" value="0xFFFFFF" />
+            <variable group="onColors" name="keyOnCol8" displayName="Key 9" type="colour" value="0xFFFFFF" />
+            <variable group="onColors" name="keyOnCol9" displayName="Key 10" type="colour" value="0xFFFFFF" />
+            <variable group="onColors" name="keyOnCol10" displayName="Key 11" type="colour" value="0xFFFFFF" />
+            <variable group="onColors" name="keyOnCol11" displayName="Key 12" type="colour" value="0xFFFFFF" />
+            <variable group="onColors" name="keyOnCol12" displayName="Key 13" type="colour" value="0xFFFFFF" />
+            <variable group="onColors" name="keyOnCol13" displayName="Key 14" type="colour" value="0xFFFFFF" />
+            <variable group="onColors" name="keyOnCol14" displayName="Key 15" type="colour" value="0xFFFFFF" />
+            <variable group="onColors" name="keyOnCol15" displayName="Key 16" type="colour" value="0xFFFFFF" />
+            <variable group="onColors" name="keyOnCol16" displayName="Key 17" type="colour" value="0xFFFFFF" />
+            <variable group="onColors" name="keyOnCol17" displayName="Key 18" type="colour" value="0xFFFFFF" />
+            <variable group="onColors" name="keyOnCol18" displayName="Key 19" type="colour" value="0xFFFFFF" />
+            <variable group="onColors" name="keyOnCol19" displayName="Key 20" type="colour" value="0xFFFFFF" />
+            <variable group="onColors" name="keyOnCol20" displayName="Key 21" type="colour" value="0xFFFFFF" />
+            <variable group="onColors" name="keyOnCol21" displayName="Key 22" type="colour" value="0xFFFFFF" />
+            <variable group="onColors" name="keyOnCol22" displayName="Key 23" type="colour" value="0xFFFFFF" />
+            <variable group="onColors" name="keyOnCol23" displayName="Key 24" type="colour" value="0xFFFFFF" />
+            <variable group="octColors" name="octCol0" displayName="Octave -2" type="colour" value="0xFFFFFF" />
+            <variable group="octColors" name="octCol1" displayName="Octave -1" type="colour" value="0xFFFFFF" />
+            <variable group="octColors" name="octCol2" displayName="Octave 0" type="colour" value="0xFFFFFF" />
+            <variable group="octColors" name="octCol3" displayName="Octave 1" type="colour" value="0xFFFFFF" />
+            <variable group="octColors" name="octCol4" displayName="Octave 2" type="colour" value="0xFFFFFF" />
+            <variable group="octColors" name="octCol5" displayName="Octave 3" type="colour" value="0xFFFFFF" />
+            <variable group="octColors" name="octCol6" displayName="Octave 4" type="colour" value="0xFFFFFF" />
+            <variable group="octColors" name="octCol7" displayName="Octave 5" type="colour" value="0xFFFFFF" />
+            <variable group="octColors" name="octCol8" displayName="Octave 6" type="colour" value="0xFFFFFF" />
+            <variable group="octColors" name="octCol9" displayName="Octave 7" type="colour" value="0xFFFFFF" />
+            <variable group="octColors" name="octCol10" displayName="Octave 8" type="colour" value="0xFFFFFF" />
+    </variables>
+</metadata>
+*/
+
+//Globals
+const int configItemId_brightness = 36;
+const int configItemId_pbrange = 3;
+
+//On and Off Brightness
+
+const int maxKeys = 24;
+const int maxOct = 8;
+const int minOct = -2;
+//2D array for on and off colors, octave button colors (10), key state, key pitch bend flags, key color fading and fade color velocity
+const int keyCols[maxKeys][7]; 
+
+
+bool toggleCols;
+int tA,tR,tG,tB,tA2,tR2,tG2,tB2,curOct;
+int cPB; //pitchbend key counter
+float tOff, tOn, vB, f;
+
+void initialise()
+{
+    setLocalConfigActiveState (configItemId_brightness, true, true);
+    setLocalConfigActiveState (configItemId_pbrange, true, true);
+    setLocalConfigActiveState (10, true, true); // strike sensitivity
+    setLocalConfigActiveState (13, true, true); // press sensitivity
+    setLocalConfigActiveState (14, true, true); // lift sensitivity
+
+    toggleCols = false;
+    curOct = 4; //Octave 4;
+}
+
+void handleButtonDown(int index)
+{
+    if (index == 0)
+    {
+        toggleCols = toggleCols ? false : true;
+       
+    }
+    else if (index == 1)
+    {
+        if (curOct > minOct)
+            --curOct;
+        else
+            curOct = minOct;
+    }
+    else if (index == 2)
+    {
+        if (curOct < maxOct)
+            ++curOct;
+        else
+            curOct = maxOct;
+    }
+    
+}
+
+int getKey (int note)
+{
+    int bn = 24 + (curOct * 12);
+
+    if (note < bn || note >= bn + 24)
+        return -1;
+
+    return note - bn;
+}
+
+int getNote(int key)
+{
+    int n = (24 + (curOct * 12)) + key;
+    
+    if (n >= 0 && n < 128)
+        return n;
+    else
+        return -1;
+}
+
+int blendVal(int val1, int val2, float blend)
+{
+    if((blend >= 0.0) && (blend <= 1.0)) 
+        return int((val1 * (1 - blend)) + (val2 * blend));
+    else
+        return -1;
+
+}
+
+void updateCols()
+{
+    //On Colors
+    keyCols[0][0] = keyOnCol0;
+    keyCols[1][0] = keyOnCol1;
+    keyCols[2][0] = keyOnCol2;
+    keyCols[3][0] = keyOnCol3;
+    keyCols[4][0] = keyOnCol4;
+    keyCols[5][0] = keyOnCol5;
+    keyCols[6][0] = keyOnCol6;
+    keyCols[7][0] = keyOnCol7;
+    keyCols[8][0] = keyOnCol8;
+    keyCols[9][0] = keyOnCol9;
+    keyCols[10][0] = keyOnCol10;
+    keyCols[11][0] = keyOnCol11;
+    keyCols[12][0] = keyOnCol12;
+    keyCols[13][0] = keyOnCol13;
+    keyCols[14][0] = keyOnCol14;
+    keyCols[15][0] = keyOnCol15;
+    keyCols[16][0] = keyOnCol16;
+    keyCols[17][0] = keyOnCol17;
+    keyCols[18][0] = keyOnCol18;
+    keyCols[19][0] = keyOnCol19;
+    keyCols[20][0] = keyOnCol20;
+    keyCols[21][0] = keyOnCol21;
+    keyCols[22][0] = keyOnCol22;
+    keyCols[23][0] = keyOnCol23;
+    
+    //Off Colors
+    keyCols[0][1] = keyOffCol0;
+    keyCols[1][1] = keyOffCol1;
+    keyCols[2][1] = keyOffCol2;
+    keyCols[3][1] = keyOffCol3;
+    keyCols[4][1] = keyOffCol4;
+    keyCols[5][1] = keyOffCol5;
+    keyCols[6][1] = keyOffCol6;
+    keyCols[7][1] = keyOffCol7;
+    keyCols[8][1] = keyOffCol8;
+    keyCols[9][1] = keyOffCol9;
+    keyCols[10][1] = keyOffCol10;
+    keyCols[11][1] = keyOffCol11;
+    keyCols[12][1] = keyOffCol12;
+    keyCols[13][1] = keyOffCol13;
+    keyCols[14][1] = keyOffCol14;
+    keyCols[15][1] = keyOffCol15;
+    keyCols[16][1] = keyOffCol16;
+    keyCols[17][1] = keyOffCol17;
+    keyCols[18][1] = keyOffCol18;
+    keyCols[19][1] = keyOffCol19;
+    keyCols[20][1] = keyOffCol20;
+    keyCols[21][1] = keyOffCol21;
+    keyCols[22][1] = keyOffCol22;
+    keyCols[23][1] = keyOffCol23;
+    
+    //Octave Buttons Colors;
+    keyCols[0][2] = octCol0;
+    keyCols[1][2] = octCol1;
+    keyCols[2][2] = octCol2; 
+    keyCols[3][2] = octCol3;
+    keyCols[4][2] = octCol4;
+    keyCols[5][2] = octCol5; 
+    keyCols[6][2] = octCol6;
+    keyCols[7][2] = octCol7;
+    keyCols[8][2] = octCol8; 
+    keyCols[9][2] = octCol9;
+    keyCols[10][2] = octCol10;
+    
+    tOn = map(float(onBright), 0.0, 100.0, 0.0, 1.0);
+    tOff = map(float(offBright), 0.0, 100.0, 0.0, 1.0);
+
+}
+
+//MIDI Handling
+const int midiNoteOff         = 0x8;
+const int midiNoteOn          = 0x9;
+
+void handleMIDI (int byte0, int byte1, int byte2)
+{
+    int channel = byte0 & 0xf;
+    int status = (byte0 >> 4) & 0xf;
+    int key = getKey (byte1);
+
+    if (status == midiNoteOn)
+    {
+        if (byte2 == 0) 
+            keyCols[key][3] = 0;
+
+        keyCols[key][3] = byte2;
+    }
+    else if (status == midiNoteOff)
+    {
+        keyCols[key][3] = 0;
+    }
+}
+
+
+void keyStrike(int index, int u, int vel)
+{
+    if (toggleVel) vel = fixedVel;
+    
+    keyCols[index][3] = vel;
+    int note = getNote (index);
+    
+    sendNoteOn(midiChan - 1, note, vel);
+}
+
+void keyPress(int index, int at, int vel)
+{
+    int note = getNote (index);
+
+    if(polyAT)
+        sendAftertouch (midiChan - 1, note, at);
+    else
+        sendChannelPressure(midiChan - 1, at);
+        
+}
+
+void keyMove (int index, int pb, int at)
+{
+    if(!keyCols[index][4]){keyCols[index][4] = true; cPB++;}
+    int note = getNote (index);
+    
+    sendPitchBend(midiChan - 1, pb);
+} 	
+
+void keyLift(int index, int u, int vel)
+{
+    keyCols[index][3] = 0;
+    if(keyCols[index][4]){keyCols[index][4] = false; cPB--;}
+    int note = getNote (index);
+
+    sendNoteOff (midiChan - 1, note, vel);
+    
+    //Reset PitchBend if counter is zero
+    if (cPB == 0)
+        sendPitchBend(midiChan - 1, 8192);
+}
+
+void renderOctaveBtns()
+{
+    if (curOct > minOct)
+        fillPixel (keyCols[curOct + 2][2], 0, 1);
+    else
+        fillPixel (0, 0, 1);
+
+    if (curOct < maxOct)
+        fillPixel (keyCols[curOct + 2][2], 1, 1);
+    else
+        fillPixel (0, 1, 1);
+}
+
+void renderKeys()
+{
+   for(int i = 0; i < 24; i++){
+            
+        //If key is on
+        if (keyCols[i][3])
+        {
+            //Break apart ARGB values to apply brightness
+            tA = (keyCols[i][0] & 0xFF000000) >> 24;
+            tR = (keyCols[i][0] & 0x00FF0000) >> 16;
+            tG = (keyCols[i][0] & 0x0000FF00) >> 8;
+            tB = (keyCols[i][0] & 0x000000FF);
+                
+            //Velocity Brightness
+            if (toggleVB) vB = map(float(keyCols[i][3]), 0.0, 127.0, 0.0, 1.0); else vB = 1.0;
+            
+            //Set fade counter if enabled
+            if (fadeColors){
+                keyCols[i][5] = 100;
+                
+                //Store initial velocity for key and don't replace until zero
+                if(toggleVB && keyCols[i][6] == 0)
+                {
+                    keyCols[i][6] = keyCols[i][3];
+                }
+            }
+            
+            fillPixel(makeARGB(int((tA * tOn) * vB), int((tR * tOn) * vB), int((tG * tOn) * vB), int((tB * tOn) * vB)), i, 0);
+        }
+        else //key is off
+        {
+             //Break apart ARGB values to apply brightness
+             tA = (keyCols[i][1] & 0xFF000000) >> 24;
+             tR = (keyCols[i][1] & 0x00FF0000) >> 16;
+             tG = (keyCols[i][1] & 0x0000FF00) >> 8;
+             tB = (keyCols[i][1] & 0x000000FF);
+             fillPixel(makeARGB(int(tA * tOff), int(tR * tOff), int(tG * tOff), int(tB * tOff)), i, 0);
+        }
+            
+   } 
+}
+
+void renderFade()
+{
+     for(int i = 0; i < 24; i++)
+     {
+         
+         if(keyCols[i][5] > 0)
+         {
+            //Break apart ARGB values from on and off colors to blend
+            
+            //on colors
+            tA = (keyCols[i][0] & 0xFF000000) >> 24;
+            tR = (keyCols[i][0] & 0x00FF0000) >> 16;
+            tG = (keyCols[i][0] & 0x0000FF00) >> 8;
+            tB = (keyCols[i][0] & 0x000000FF);  
+            
+            //off colors
+            tA2 = (keyCols[i][1] & 0xFF000000) >> 24;
+            tR2 = (keyCols[i][1] & 0x00FF0000) >> 16;
+            tG2 = (keyCols[i][1] & 0x0000FF00) >> 8;
+            tB2 = (keyCols[i][1] & 0x000000FF); 
+            
+            //Blend colors
+            f = map(float(keyCols[i][5]), 0.0, 100.0, 0.0, 1.0);
+            tR = blendVal(int(tR2 * tOff), int(tR * tOn), f);
+            tG = blendVal(int(tG2 * tOff), int(tG * tOn), f);
+            tB = blendVal(int(tB2 * tOff), int(tB * tOn), f);
+            
+            //Check for velocity fade value for previously triggered key
+            if(toggleVB && keyCols[i][6] > 0)vB = map(float(keyCols[i][6]), 0.0, 127.0, 0.0, 1.0); else vB = 1.0;
+            
+            fillPixel(makeARGB(tA, int(tR * vB), int(tG * vB), int(tB * vB)), i, 0);
+            
+            //Decrease fade amount
+            keyCols[i][5] = keyCols[i][5] - fadeInc;
+         }
+         else{
+            keyCols[i][5] = 0;
+            keyCols[i][6] = 0;
+         }
+     }
+}
+	
+void repaint()
+{
+    
+    if(toggleCols){
+        
+        //Render key colors
+        renderKeys();
+        
+        //Render fade loop if active
+        if(fadeColors)   
+        {
+            renderFade();
+        }
+        
+        //Render Octave Buttons
+        renderOctaveBtns();
+    }
+    else{
+        clearDisplay();
+        updateCols();
+    }
+
+}
