@@ -38,7 +38,16 @@ If the keyboard runs another program, such as the Dashboard version of the scrip
 
 ## Regenerating
 
-The page and `tools/convert_mode.js` need nothing but a browser and Node, on any system. The C++ tools build against JUCE's `juce_core` and ROLI's `roli_blocks_basics` (https://github.com/WeAreROLI/roli_blocks_basics). They need the native function list from `protocol/roli_BlocksProtocolDefinitions.h` (`ledProgramLittleFootFunctions`, renamed `lfNatives`) saved as `natives.inc`. They are plain C++ and build with g++ or clang++ on Linux and macOS, where `juce_core` compiles as Objective-C++ and wants its usual frameworks; on Windows they build the same way inside WSL.
+The page and `tools/convert_mode.js` need nothing but a browser and Node, on any system.
+
+The C++ tools build with `tools/Makefile`, against two checkouts that aren't vendored here: ROLI's BLOCKS SDK (https://github.com/WeAreROLI/BLOCKS-SDK), which supplies JUCE's `juce_core`, and `roli_blocks_basics` (https://github.com/WeAreROLI/roli_blocks_basics), which has the littlefoot compiler and runner. Point the makefile at them, where `SDK` is the folder holding `juce_core` rather than the top of that repository:
+
+```
+cd tools
+make SDK=~/BLOCKS-SDK/SDK BLOCKS=~/roli_blocks_basics
+```
+
+That writes `lfgen`, `lfsim` and `lfprof` into `tools/build`, along with `natives.inc`, the SDK's own table of littlefoot functions, which the compiler front end needs. `make regen` rebuilds `editor_program.js` from the program source with `lfgen`, and `make clean` removes the build directory. On Windows, build inside WSL: the tools are plain C++, but `juce_core` expects a POSIX system. Two defines in the makefile are not optional — `juce_core` refuses to compile without `JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED`, and without `JUCE_USE_CURL=0` the link fails on curl symbols none of the tools ever reach.
 
 - `tools/lfgen.cpp`: `lfgen editor_program.littlefoot editor_program.js editor_program.bin EDITOR_PROGRAM` compiles the program, finds the placeholders (it fails if one is missing, repeated or out of sequence), writes the build id and writes the JS file. Run it after changing the program.
 - `tools/lfsim.cpp`: runs a script or a compiled `.bin` against a scenario of key, button, MIDI, setting, shared-memory and message events, and logs MIDI, LEDs and messages.

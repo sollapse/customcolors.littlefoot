@@ -1,0 +1,2 @@
+# What the makefile writes: the binaries, juce_core.o, and natives.inc generated from the SDK
+build/

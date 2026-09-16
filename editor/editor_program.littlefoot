@@ -60,7 +60,8 @@ int chanPress[16];
 //the lit color (on color with brightness and velocity applied, worked out when the key lights),
 //the note (+1, 0 when silent) and channel captured at strike so a lift still matches its note after an octave change,
 //the off color with brightness applied (worked out when values load) and the last poly aftertouch sent
-const int keyCols[maxKeys][11];
+//Column 11 is the key state from the host, kept apart from a finger's (column 3) so neither can darken a key the other still has on
+const int keyCols[maxKeys][12];
 
 
 bool toggleCols;
@@ -114,14 +115,20 @@ void handleButtonDown(int index)
     else if (index == 1)
     {
         if (curOct > minOct)
+        {
             --curOct;
+            clearHostLit();
+        }
         else
             curOct = minOct;
     }
     else if (index == 2)
     {
         if (curOct < maxOct)
+        {
             ++curOct;
+            clearHostLit();
+        }
         else
             curOct = maxOct;
     }
@@ -177,6 +184,8 @@ void cacheCols()
 
         if (keyCols[i][3])
             keyCols[i][6] = litCol(i, keyCols[i][3]);
+        else if (keyCols[i][11])
+            keyCols[i][6] = litCol(i, keyCols[i][11]);
     }
 }
 
@@ -456,19 +465,42 @@ void handleMessage(int p1, int p2, int p3)
     }
 }
 
+//A key is lit while a finger (column 3) or the host (column 11) has it on. Each source sets only its own column, so
+//the host's note-off can't darken a key a finger still holds, and the lit color follows whichever is still on
+void setKeyLit(int index, int column, int vel)
+{
+    //A note-off for a key that's already dark (e.g. the host echoing a lift) mustn't restart its fade
+    bool wasLit = keyCols[index][3] > 0 || keyCols[index][11] > 0;
+
+    keyCols[index][column] = vel;
+
+    if (vel > 0)
+        keyCols[index][6] = litCol(index, vel);
+    else if (keyCols[index][3] > 0)
+        keyCols[index][6] = litCol(index, keyCols[index][3]);
+    else if (keyCols[index][11] > 0)
+        keyCols[index][6] = litCol(index, keyCols[index][11]);
+    else if (fadeColors != 0 && wasLit)
+        keyCols[index][5] = 100;
+}
+
 void lightKey(int index, int vel)
 {
-    keyCols[index][3] = vel;
-    keyCols[index][6] = litCol(index, vel);
+    setKeyLit(index, 3, vel);
 }
 
 void unlightKey(int index)
 {
-    //A note-off for a key that's already dark (e.g. the host echoing a lift) mustn't restart its fade
-    if (fadeColors != 0 && keyCols[index][3])
-        keyCols[index][5] = 100;
+    setKeyLit(index, 3, 0);
+}
 
-    keyCols[index][3] = 0;
+//The host's notes land on keys by the octave they arrived under, so once the octave changes their note-offs resolve
+//to other keys and would leave these lit. A key a finger holds stays lit through its own column
+void clearHostLit()
+{
+    for (int i = 0; i < maxKeys; i++)
+        if (keyCols[i][11] > 0)
+            setKeyLit(i, 11, 0);
 }
 
 //MIDI Handling
@@ -490,9 +522,9 @@ void handleMIDI (int byte0, int byte1, int byte2)
         return;
 
     if (status == midiNoteOn && byte2 > 0)
-        lightKey(key, byte2);
+        setKeyLit(key, 11, byte2);
     else
-        unlightKey(key);
+        setKeyLit(key, 11, 0);
 }
 
 //0 = single channel, 1 = MPE lower zone, 2 = MPE upper zone
@@ -774,7 +806,7 @@ void renderKeys()
 {
     for (int i = 0; i < maxKeys; i++)
     {
-        if (keyCols[i][3])
+        if (keyCols[i][3] || keyCols[i][11])
         {
             fillPixel(keyCols[i][6], i, 0);
         }
