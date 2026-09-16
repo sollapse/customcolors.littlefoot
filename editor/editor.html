@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>customcolors editor</title>
+<style>
+:root {
+    --bg: #f4f3ef; --panel: #ffffff; --panel-2: #faf9f6; --ink: #1c1c1e; --muted: #6c6c72; --line: #dfddd6;
+    --accent: #2f6fed; --accent-ink: #ffffff; --ok: #1f8a4c; --warn: #b26a00; --bad: #c8322b; --focus: #2f6fed55;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+    :root { --bg: #121214; --panel: #1b1b1e; --panel-2: #222226; --ink: #ececef; --muted: #9c9ca5; --line: #313137;
+            --accent: #5b8df6; --accent-ink: #0b0b0d; --ok: #4cc47d; --warn: #e3a44a; --bad: #ff6f66; --focus: #5b8df666; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
+
+.top { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px);
+       border-bottom: 1px solid var(--line); }
+.top-inner { max-width: 1040px; margin: 0 auto; padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; justify-content: space-between; }
+.brand h1 { font-size: 18px; margin: 0; letter-spacing: -.01em; }
+.brand p { margin: 0; color: var(--muted); font-size: 12.5px; }
+.status { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+.dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.bad { background: var(--bad); }
+#statusText { font-size: 13px; }
+
+main { max-width: 1040px; margin: 0 auto; padding: 16px 16px 48px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+.panel-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 10px; }
+h2 { font-size: 15px; margin: 0; }
+.note { color: var(--muted); font-size: 13px; margin: 4px 0 10px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+.spacer { flex: 1 1 auto; }
+
+button { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); cursor: pointer; white-space: nowrap; }
+button:hover:not(:disabled) { border-color: color-mix(in srgb, var(--ink) 35%, var(--line)); }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+button:disabled { opacity: .45; cursor: default; }
+select, input[type=number], input[type=text] { padding: 5px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel-2); min-width: 0; }
+input[type=number] { width: 5.5em; }
+label.field { display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; color: var(--muted); min-width: 0; flex: 1 1 220px; }
+label.field select { color: var(--ink); font-size: 14px; }
+ol.steps { margin: 6px 0 0 18px; padding: 0; }
+ol.steps li { margin: 4px 0; }
+code { font-family: var(--mono); font-size: 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+
+/* Switches */
+.toggle { position: relative; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
+.toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.track { width: 38px; height: 22px; border-radius: 11px; background: color-mix(in srgb, var(--muted) 45%, var(--line)); position: relative; flex: none; transition: background .15s; }
+.track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px #0004; transition: transform .15s; }
+.toggle input:checked + .track { background: var(--accent); }
+.toggle input:checked + .track::after { transform: translateX(16px); }
+.toggle input:focus-visible + .track { outline: 3px solid var(--focus); outline-offset: 1px; }
+.toggle input:disabled + .track { opacity: .5; }
+
+.state-switch { display: inline-flex; align-items: center; gap: 10px; font-weight: 600; }
+.state-switch .side { color: var(--muted); transition: color .15s; }
+.state-switch .side.active { color: var(--ink); }
+.state-switch .track { width: 46px; height: 26px; border-radius: 13px; background: var(--accent); }
+.state-switch .track::after { top: 3px; left: 3px; width: 20px; height: 20px; }
+.state-switch input:checked + .track::after { transform: translateX(20px); }
+
+.bright { display: flex; align-items: center; gap: 10px; flex: 1 1 280px; max-width: 420px; }
+.bright input { flex: 1; accent-color: var(--accent); }
+.bright output { font-variant-numeric: tabular-nums; width: 3.2em; text-align: right; }
+
+/* Swatches */
+.swatches { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 6px; margin: 10px 0 4px; }
+.swatches.octaves { grid-template-columns: repeat(11, minmax(0, 1fr)); }
+.swatch { position: relative; display: flex; flex-direction: column; gap: 4px; padding: 8px 5px 6px; min-width: 0;
+          border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+.swatch.sharp::before { content: ""; position: absolute; top: -1px; left: 50%; width: 44%; height: 5px; transform: translateX(-50%);
+                        background: var(--ink); border-radius: 0 0 4px 4px; }
+.swatch-label { font-size: 11px; color: var(--muted); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.swatch input[type=color] { width: 100%; height: 42px; padding: 0; border: 0; background: none; cursor: pointer; }
+.swatch input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+.swatch input[type=color]::-webkit-color-swatch { border: 1px solid #0003; border-radius: 7px; }
+.swatch input[type=color]::-moz-color-swatch { border: 1px solid #0003; border-radius: 7px; }
+.swatch-hex { width: 100%; padding: 3px 1px !important; border-radius: 6px !important; font: 11px var(--mono) !important; text-align: center; letter-spacing: -.02em; }
+.swatch-hex.invalid { border-color: var(--bad) !important; color: var(--bad); }
+.tools { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
+.fill { display: inline-flex; align-items: center; gap: 6px; }
+.fill input[type=color] { width: 36px; height: 30px; padding: 0; border: 1px solid var(--line); border-radius: 7px; background: none; cursor: pointer; }
+.fill input[type=text] { width: 7.5em; font-family: var(--mono); font-size: 12px; }
+
+/* Settings */
+.settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+fieldset { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px 10px; margin: 0; min-width: 0; }
+legend { font-size: 12px; color: var(--muted); padding: 0 4px; }
+.setting { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; }
+.setting + .setting { border-top: 1px dashed var(--line); }
+.setting.disabled .setting-name { color: var(--muted); }
+.setting-name small { display: block; color: var(--muted); font-size: 12px; }
+
+/* Sensitivity graphs, laid out like Dashboard's */
+.curves { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.curve { display: grid; grid-template-columns: auto 1fr; grid-template-areas: "slider graph" "slider name"; gap: 8px 12px;
+         align-items: center; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
+.curve-slider { grid-area: slider; writing-mode: vertical-lr; direction: rtl; width: 20px; height: 112px; margin: 0; accent-color: var(--curve); }
+.curve-graph { grid-area: graph; width: 100%; height: 112px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+.curve-grid { fill: none; stroke: color-mix(in srgb, var(--muted) 25%, transparent); stroke-width: 1; }
+.curve-line { fill: none; stroke: var(--curve); stroke-width: 2; stroke-linejoin: round; }
+.curve-name { grid-area: name; justify-self: start; color: var(--curve); font-weight: 600; }
+.curve-value { grid-area: name; justify-self: end; color: var(--muted); font-variant-numeric: tabular-nums; }
+.curve:nth-child(1) { --curve: #2ec8e6; }
+.curve:nth-child(2) { --curve: #3ec9a0; }
+.curve:nth-child(3) { --curve: #e8a33d; }
+
+/* Keyboard */
+.keyboard-text { margin: 0; }
+.progress { height: 6px; border-radius: 3px; background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; margin: 10px 0 2px; }
+.progress div { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.notice { border: 1px solid color-mix(in srgb, var(--warn) 55%, var(--line)); background: color-mix(in srgb, var(--warn) 9%, var(--panel)); border-radius: 10px; padding: 10px 12px; margin-top: 10px; }
+.notice p { margin: 0 0 4px; }
+.message { font-size: 13px; min-height: 1.45em; margin: 6px 0 0; }
+.ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--bad); } .muted { color: var(--muted); }
+
+/* Library */
+.sets { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.sets li { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); flex-wrap: wrap; }
+.sets .strip { display: grid; grid-template-columns: repeat(24, 1fr); width: 168px; height: 16px; border-radius: 4px; overflow: hidden; border: 1px solid #0002; flex: none; }
+.sets .set-name { font-weight: 600; flex: 1 1 140px; min-width: 0; overflow-wrap: anywhere; }
+.sets .set-date { color: var(--muted); font-size: 12px; }
+.sets .empty { color: var(--muted); border-style: dashed; justify-content: center; }
+
+details.panel summary { cursor: pointer; font-weight: 600; font-size: 15px; }
+.log { font-family: var(--mono); font-size: 12px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px; height: 260px; overflow: auto; }
+.log div { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+@media (max-width: 860px) {
+    .swatches { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+    .swatches.octaves { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}
+@media (max-width: 460px) {
+    .swatches, .swatches.octaves { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .sets .strip { width: 100%; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+    <div class="top-inner">
+        <div class="brand">
+            <h1>customcolors</h1>
+            <p>Key colors, octave buttons and MIDI settings for the ROLI Piano M</p>
+        </div>
+        <div class="status">
+            <span id="statusDot" class="dot" aria-hidden="true"></span>
+            <span id="statusText" role="status">Not connected</span>
+            <button id="connectButton" class="primary">Connect</button>
+        </div>
+    </div>
+</header>
+
+<main>
+    <section id="setupPanel" class="panel">
+        <div class="panel-head"><h2>Before you connect</h2></div>
+        <ol class="steps">
+            <li id="platformStep">Close ROLI Connect and ROLI Dashboard, so they don't talk to the keyboard while this page does.</li>
+            <li>Connect the Piano M by USB and use Chrome or Edge. Allow MIDI access with system exclusive messages when asked.</li>
+        </ol>
+        <div class="row">
+            <label class="field">MIDI input <select id="inPort" disabled><option>Press Connect to list MIDI ports</option></select></label>
+            <label class="field">MIDI output <select id="outPort" disabled><option>Press Connect to list MIDI ports</option></select></label>
+        </div>
+        <p id="contextWarning" class="note bad" hidden></p>
+    </section>
+
+    <section class="panel">
+        <div class="panel-head">
+            <h2>Keyboard</h2>
+            <label class="toggle" title="Show changes on the keyboard as you edit. They stay until you save, discard them or disconnect.">
+                <input id="livePreview" type="checkbox" role="switch" checked>
+                <span class="track"></span><span>Live preview</span>
+            </label>
+        </div>
+        <p id="keyboardText" class="keyboard-text muted">Not connected. Your edits are kept in this browser until you connect.</p>
+        <div id="progress" class="progress" hidden><div id="progressBar"></div></div>
+        <div class="row">
+            <button id="loadButton" disabled>Load from keyboard</button>
+            <button id="discardButton" disabled>Discard preview</button>
+            <span class="spacer"></span>
+            <button id="tryButton" disabled title="Upload without saving: the keyboard goes back to its saved program when it restarts">Try on keyboard</button>
+            <button id="saveButton" class="primary" disabled>Save to keyboard</button>
+        </div>
+        <div id="notice" class="notice" hidden>
+            <p id="noticeText"></p>
+            <div class="row">
+                <button id="noticeKeyboard">Use the keyboard's</button>
+                <button id="noticePage">Keep this page's</button>
+            </div>
+        </div>
+        <p id="message" class="message" aria-live="polite"></p>
+    </section>
+
+    <section class="panel">
+        <div class="panel-head">
+            <h2>Keys</h2>
+            <label class="state-switch" title="Choose which colors the swatches edit">
+                <span id="offSide" class="side active">Off colors</span>
+                <span class="toggle"><input id="editOn" type="checkbox" role="switch" aria-label="Edit the on colors"><span class="track"></span></span>
+                <span id="onSide" class="side">On colors</span>
+            </label>
+        </div>
+        <div class="row">
+            <label class="bright"><span id="brightnessLabel">Key Off Brightness</span>
+                <input id="brightness" type="range" min="0" max="100" step="1">
+                <output id="brightnessValue" for="brightness"></output>
+            </label>
+        </div>
+        <div id="keys" class="swatches"></div>
+        <div class="row tools">
+            <span class="fill">
+                <input id="fillColor" type="color" value="#ffffff" aria-label="Fill color">
+                <input id="fillHex" type="text" value="FFFFFFFF" spellcheck="false" aria-label="Fill color, hex ARGB">
+            </span>
+            <button id="fillAll">Fill all keys</button>
+            <button id="fillWhite">White keys</button>
+            <button id="fillBlack">Black keys</button>
+            <span class="spacer"></span>
+            <button id="copyToOther">Copy to on colors</button>
+            <button id="presetRainbow">Rainbow</button>
+        </div>
+    </section>
+
+    <section class="panel">
+        <div class="panel-head"><h2>Octave buttons</h2></div>
+        <p class="note">Both octave buttons show the color of the current octave; they're dark at the lowest and highest octave in that direction.</p>
+        <div id="octaves" class="swatches octaves"></div>
+    </section>
+
+    <section class="panel">
+        <div class="panel-head"><h2>Settings</h2></div>
+        <div class="settings">
+            <fieldset>
+                <legend>MIDI</legend>
+                <div class="setting"><span class="setting-name">MPE Mode</span>
+                    <label class="toggle"><input type="checkbox" role="switch" data-setting="mpeMode" aria-label="MPE Mode"><span class="track"></span></label></div>
+                <div class="setting" data-group="single"><span class="setting-name">MIDI Channel<small>Single channel</small></span>
+                    <input type="number" data-setting="midiChan" min="1" max="16" aria-label="MIDI Channel"></div>
+                <div class="setting" data-group="single"><span class="setting-name">Poly Aftertouch<small>Single channel</small></span>
+                    <label class="toggle"><input type="checkbox" role="switch" data-setting="polyAT" aria-label="Poly Aftertouch"><span class="track"></span></label></div>
+                <div class="setting" data-group="mpe"><span class="setting-name">Upper Zone<small>Manager channel 16</small></span>
+                    <label class="toggle"><input type="checkbox" role="switch" data-setting="mpeUpperZone" aria-label="Upper Zone"><span class="track"></span></label></div>
+                <div class="setting" data-group="mpe"><span class="setting-name">Member Channels</span>
+                    <input type="number" data-setting="mpeMembers" min="1" max="15" aria-label="Member Channels"></div>
+            </fieldset>
+            <fieldset>
+                <legend>Velocity</legend>
+                <div class="setting"><span class="setting-name">Fixed Velocity Toggle</span>
+                    <label class="toggle"><input type="checkbox" role="switch" data-setting="toggleVel" aria-label="Fixed Velocity Toggle"><span class="track"></span></label></div>
+                <div class="setting" data-group="fixedVel"><span class="setting-name">Fixed Velocity</span>
+                    <input type="number" data-setting="fixedVel" min="1" max="127" aria-label="Fixed Velocity"></div>
+                <div class="setting"><span class="setting-name">Velocity Brightness<small>Harder strikes light brighter</small></span>
+                    <label class="toggle"><input type="checkbox" role="switch" data-setting="toggleVB" aria-label="Velocity Brightness"><span class="track"></span></label></div>
+            </fieldset>
+            <fieldset>
+                <legend>Fade</legend>
+                <div class="setting"><span class="setting-name">Fade On/Off Colors<small>Released keys fade back to their off color</small></span>
+                    <label class="toggle"><input type="checkbox" role="switch" data-setting="fadeColors" aria-label="Fade On/Off Colors"><span class="track"></span></label></div>
+                <div class="setting" data-group="fade"><span class="setting-name">Fade Step<small>Percent per frame, higher is faster</small></span>
+                    <input type="number" data-setting="fadeInc" min="1" max="100" aria-label="Fade Step"></div>
+            </fieldset>
+            <fieldset>
+                <legend>Keyboard settings</legend>
+                <div class="setting"><span class="setting-name">Pitch Bend Range<small>Semitones</small></span>
+                    <input type="number" data-setting="pitchBendRange" min="1" max="96" aria-label="Pitch Bend Range"></div>
+                <div class="setting"><span class="setting-name">Brightness<small>Global</small></span>
+                    <input type="number" data-setting="brightness" data-lights min="0" max="100" aria-label="Brightness"></div>
+            </fieldset>
+        </div>
+    </section>
+
+    <section class="panel">
+        <div class="panel-head"><h2>Sensitivity</h2></div>
+        <p class="note">How hard you have to play for full output, drawn the way Dashboard draws it: the curve reaches the top at the level you set, and 127 is a straight line.</p>
+        <div id="curves" class="curves"></div>
+    </section>
+
+    <section class="panel">
+        <div class="panel-head"><h2>Saved on this computer</h2></div>
+        <p class="note">Your current edits are kept in this browser automatically. Save named sets to come back to, or export them to a file to keep elsewhere.</p>
+        <div class="row">
+            <input id="setName" type="text" placeholder="Name this set" aria-label="Set name" maxlength="60">
+            <button id="saveSet">Save set</button>
+            <span class="spacer"></span>
+            <button id="exportFile">Export file</button>
+            <button id="importFile">Import file</button>
+            <input id="importInput" type="file" accept=".json,application/json" hidden>
+        </div>
+        <ul id="sets" class="sets"></ul>
+        <p id="storageWarning" class="note bad" hidden>This browser isn't letting the page store data, so edits are lost when the page closes. Export a file to keep them.</p>
+    </section>
+
+    <details class="panel">
+        <summary>Connection log</summary>
+        <div class="row">
+            <label class="toggle"><input id="showPackets" type="checkbox" role="switch"><span class="track"></span><span>Show packets</span></label>
+            <button id="copyLog">Copy log</button>
+            <button id="clearLog">Clear</button>
+        </div>
+        <div id="log" class="log" role="log"></div>
+    </details>
+</main>
+
+<script src="blocks.js"></script>
+<script src="editor_program.js"></script>
+<script src="editor_core.js"></script>
+<script src="editor_ui.js"></script>
+</body>
+</html>

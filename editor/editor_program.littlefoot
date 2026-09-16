@@ -1,0 +1,812 @@
+/*
+  customcolors.littlefoot LUMI Key/Piano M script, web editor build
+  by sollapse/2025
+
+  Allows for customizing per-key colors for on and off states and the octave buttons, along with fading between key colors when active.
+  Outputs single channel MIDI or MPE (one lower or upper zone).
+
+  The settings come from the web editor (editor.html) instead of Dashboard: each 0x5A5A00nn literal is a placeholder
+  the editor overwrites before uploading the program. While connected, the editor previews changes through the
+  program's shared memory, which the keyboard doesn't keep after a restart.
+
+  Uses portions of the default ROLI LUMI Key script as a guide.
+  https://github.com/benob/LUMI-lights/blob/master/littlefoot/LUMI%20Keys%20Block%20Default%20Program.littlefoot
+*/
+
+//Shared memory holds the editor's values as 4-byte ints, value n at offset n * 4:
+//0-23 on colors, 24-47 off colors, 48-58 octave button colors, then the settings in the order loadBaked() sets them
+#heapsize: 304
+
+//Globals
+const int configItemId_brightness = 36;
+const int configItemId_pbrange = 3;
+
+const int maxKeys = 24;
+const int maxOct = 8;
+const int minOct = -2;
+const int valueCount = 76;
+
+//Build id, written by lfgen, so the editor only previews through shared memory laid out the way it expects
+const int buildId = 0x5A5A00FF;
+
+//Messages from the editor; replies use the same ids
+const int msgInfo = 0x43430001;   //reply: build id, flags (256 = message format 1, +1 values from shared memory, +2 lights on)
+const int msgReport = 0x43430002; //reply: msgValues + n with values n and n + 1 for every even n, then msgReport, value count, value sum
+const int msgApply = 0x43430003;  //load the values from shared memory, p2 = 1 also turns the lights on; reply: value sum
+const int msgRevert = 0x43430004; //load the values written into the program; reply: value sum
+const int msgValues = 0x43430100;
+
+//Settings (the switches are 0 or 1)
+int midiChan, polyAT, mpeMode, toggleVel, fixedVel, toggleVB, fadeColors, fadeInc;
+int mpeUpperZone, mpeMembers, offBright, onBright;
+
+//The keyboard's own settings, which Dashboard lists with the script's and keeps in its presets
+int pitchBendRange, strikeSensitivity, pressureSensitivity, liftSensitivity, brightness;
+
+//Declare every other array before keyCols: the compiler starts an array declared after a 2D array
+//only one row past the 2D array's start, so the two would share memory
+
+//MPE channel allocation: notes held and last use, per channel
+int chanNotes[16];
+int chanStamp[16];
+int stampCount;
+int nextChan; //member channel the allocator tries first
+
+//Last pitch bend and channel pressure sent per channel, repeats aren't sent again
+int chanBend[16];
+int chanPress[16];
+
+//2D array for on and off colors, octave button colors (11), key state, key pitch bend flags, key color fading,
+//the lit color (on color with brightness and velocity applied, worked out when the key lights),
+//the note (+1, 0 when silent) and channel captured at strike so a lift still matches its note after an octave change,
+//the off color with brightness applied (worked out when values load) and the last poly aftertouch sent
+const int keyCols[maxKeys][11];
+
+
+bool toggleCols;
+int curOct;
+int cPB; //pitchbend key counter
+float tOff, tOn;
+
+//Last applied MIDI settings, compared every frame to pick up changes
+int lastZone, lastMembers, lastChan, lastBend;
+int hostOffFrames; //frames the host has been disconnected, up to 12
+int mcmStep; //next zone announcement step, -1 when done
+
+bool heapValues; //values came from shared memory rather than the program
+int reportStep; //next value the report sends, -1 when not reporting
+
+void initialise()
+{
+    setLocalConfigActiveState (configItemId_brightness, true, true);
+    setLocalConfigActiveState (configItemId_pbrange, true, true);
+    setLocalConfigActiveState (10, true, true); // strike sensitivity
+    setLocalConfigActiveState (13, true, true); // press sensitivity
+    setLocalConfigActiveState (14, true, true); // lift sensitivity
+
+    toggleCols = false;
+    curOct = 4; //Octave 4;
+
+    lastZone = -1;
+    lastMembers = -1;
+    lastChan = -1;
+    lastBend = -1;
+    mcmStep = -1;
+    reportStep = -1;
+
+    //Unknown until sent, so the first bend and pressure on each channel always go out
+    for (int ch = 0; ch < 16; ch++)
+    {
+        chanBend[ch] = -1;
+        chanPress[ch] = -1;
+    }
+
+    loadBaked();
+    applyValues();
+}
+
+void handleButtonDown(int index)
+{
+    if (index == 0)
+    {
+        toggleCols = toggleCols ? false : true;
+    }
+    else if (index == 1)
+    {
+        if (curOct > minOct)
+            --curOct;
+        else
+            curOct = minOct;
+    }
+    else if (index == 2)
+    {
+        if (curOct < maxOct)
+            ++curOct;
+        else
+            curOct = maxOct;
+    }
+
+}
+
+int getKey (int note)
+{
+    int bn = 24 + (curOct * 12);
+
+    if (note < bn || note >= bn + 24)
+        return -1;
+
+    return note - bn;
+}
+
+int getNote(int key)
+{
+    int n = (24 + (curOct * 12)) + key;
+
+    if (n >= 0 && n < 128)
+        return n;
+    else
+        return -1;
+}
+
+//On color with brightness and velocity brightness applied
+int litCol(int index, int vel)
+{
+    int c = keyCols[index][0];
+    float vB = 1.0;
+
+    if (toggleVB != 0)
+        vB = map(float(vel), 0.0, 127.0, 0.0, 1.0);
+
+    return makeARGB(int((((c & 0xFF000000) >> 24) * tOn) * vB), int((((c & 0x00FF0000) >> 16) * tOn) * vB), int((((c & 0x0000FF00) >> 8) * tOn) * vB), int(((c & 0x000000FF) * tOn) * vB));
+}
+
+//Off color with brightness applied
+int offCol(int index)
+{
+    int c = keyCols[index][1];
+
+    return makeARGB(int(((c & 0xFF000000) >> 24) * tOff), int(((c & 0x00FF0000) >> 16) * tOff), int(((c & 0x0000FF00) >> 8) * tOff), int((c & 0x000000FF) * tOff));
+}
+
+//Colors and brightness only change when values load, so work out the drawn colors then
+void cacheCols()
+{
+    for (int i = 0; i < maxKeys; i++)
+    {
+        keyCols[i][9] = offCol(i);
+
+        if (keyCols[i][3])
+            keyCols[i][6] = litCol(i, keyCols[i][3]);
+    }
+}
+
+//Blend two ARGB colors, amount 0-100 is the share of col2
+int blendCol(int col1, int col2, int amount)
+{
+    int result = 0;
+
+    for (int shift = 0; shift < 32; shift += 8)
+    {
+        int a = (col1 >> shift) & 0xFF;
+        int b = (col2 >> shift) & 0xFF;
+        result = result | ((a + ((b - a) * amount) / 100) << shift);
+    }
+
+    return result;
+}
+
+//Values written into the program by the editor: value n is placeholder 0x5A5A0000 + n
+void loadBaked()
+{
+    //On Colors
+    keyCols[0][0] = 0x5A5A0000;
+    keyCols[1][0] = 0x5A5A0001;
+    keyCols[2][0] = 0x5A5A0002;
+    keyCols[3][0] = 0x5A5A0003;
+    keyCols[4][0] = 0x5A5A0004;
+    keyCols[5][0] = 0x5A5A0005;
+    keyCols[6][0] = 0x5A5A0006;
+    keyCols[7][0] = 0x5A5A0007;
+    keyCols[8][0] = 0x5A5A0008;
+    keyCols[9][0] = 0x5A5A0009;
+    keyCols[10][0] = 0x5A5A000A;
+    keyCols[11][0] = 0x5A5A000B;
+    keyCols[12][0] = 0x5A5A000C;
+    keyCols[13][0] = 0x5A5A000D;
+    keyCols[14][0] = 0x5A5A000E;
+    keyCols[15][0] = 0x5A5A000F;
+    keyCols[16][0] = 0x5A5A0010;
+    keyCols[17][0] = 0x5A5A0011;
+    keyCols[18][0] = 0x5A5A0012;
+    keyCols[19][0] = 0x5A5A0013;
+    keyCols[20][0] = 0x5A5A0014;
+    keyCols[21][0] = 0x5A5A0015;
+    keyCols[22][0] = 0x5A5A0016;
+    keyCols[23][0] = 0x5A5A0017;
+
+    //Off Colors
+    keyCols[0][1] = 0x5A5A0018;
+    keyCols[1][1] = 0x5A5A0019;
+    keyCols[2][1] = 0x5A5A001A;
+    keyCols[3][1] = 0x5A5A001B;
+    keyCols[4][1] = 0x5A5A001C;
+    keyCols[5][1] = 0x5A5A001D;
+    keyCols[6][1] = 0x5A5A001E;
+    keyCols[7][1] = 0x5A5A001F;
+    keyCols[8][1] = 0x5A5A0020;
+    keyCols[9][1] = 0x5A5A0021;
+    keyCols[10][1] = 0x5A5A0022;
+    keyCols[11][1] = 0x5A5A0023;
+    keyCols[12][1] = 0x5A5A0024;
+    keyCols[13][1] = 0x5A5A0025;
+    keyCols[14][1] = 0x5A5A0026;
+    keyCols[15][1] = 0x5A5A0027;
+    keyCols[16][1] = 0x5A5A0028;
+    keyCols[17][1] = 0x5A5A0029;
+    keyCols[18][1] = 0x5A5A002A;
+    keyCols[19][1] = 0x5A5A002B;
+    keyCols[20][1] = 0x5A5A002C;
+    keyCols[21][1] = 0x5A5A002D;
+    keyCols[22][1] = 0x5A5A002E;
+    keyCols[23][1] = 0x5A5A002F;
+
+    //Octave Buttons Colors
+    keyCols[0][2] = 0x5A5A0030;
+    keyCols[1][2] = 0x5A5A0031;
+    keyCols[2][2] = 0x5A5A0032;
+    keyCols[3][2] = 0x5A5A0033;
+    keyCols[4][2] = 0x5A5A0034;
+    keyCols[5][2] = 0x5A5A0035;
+    keyCols[6][2] = 0x5A5A0036;
+    keyCols[7][2] = 0x5A5A0037;
+    keyCols[8][2] = 0x5A5A0038;
+    keyCols[9][2] = 0x5A5A0039;
+    keyCols[10][2] = 0x5A5A003A;
+
+    onBright = 0x5A5A003B;
+    offBright = 0x5A5A003C;
+    midiChan = 0x5A5A003D;
+    polyAT = 0x5A5A003E;
+    mpeMode = 0x5A5A003F;
+    mpeUpperZone = 0x5A5A0040;
+    mpeMembers = 0x5A5A0041;
+    toggleVel = 0x5A5A0042;
+    fixedVel = 0x5A5A0043;
+    toggleVB = 0x5A5A0044;
+    fadeColors = 0x5A5A0045;
+    fadeInc = 0x5A5A0046;
+
+    pitchBendRange = 0x5A5A0047;
+    strikeSensitivity = 0x5A5A0048;
+    pressureSensitivity = 0x5A5A0049;
+    liftSensitivity = 0x5A5A004A;
+    brightness = 0x5A5A004B;
+}
+
+//Values the editor wrote to shared memory, same order
+void loadHeap()
+{
+    for (int i = 0; i < maxKeys; i++)
+    {
+        keyCols[i][0] = getHeapInt(i * 4);
+        keyCols[i][1] = getHeapInt(96 + i * 4);
+    }
+
+    for (int j = 0; j < 11; j++)
+        keyCols[j][2] = getHeapInt(192 + j * 4);
+
+    onBright = getHeapInt(236);
+    offBright = getHeapInt(240);
+    midiChan = getHeapInt(244);
+    polyAT = getHeapInt(248);
+    mpeMode = getHeapInt(252);
+    mpeUpperZone = getHeapInt(256);
+    mpeMembers = getHeapInt(260);
+    toggleVel = getHeapInt(264);
+    fixedVel = getHeapInt(268);
+    toggleVB = getHeapInt(272);
+    fadeColors = getHeapInt(276);
+    fadeInc = getHeapInt(280);
+
+    pitchBendRange = getHeapInt(284);
+    strikeSensitivity = getHeapInt(288);
+    pressureSensitivity = getHeapInt(292);
+    liftSensitivity = getHeapInt(296);
+    brightness = getHeapInt(300);
+}
+
+//Keeps the settings note handling divides by or sends in range, writes the keyboard's own settings,
+//then works out the colors drawn
+void applyValues()
+{
+    midiChan = clamp(1, 16, midiChan);
+    mpeMembers = clamp(1, 15, mpeMembers);
+    fixedVel = clamp(1, 127, fixedVel);
+    fadeInc = clamp(1, 100, fadeInc);
+    onBright = clamp(0, 100, onBright);
+    offBright = clamp(0, 100, offBright);
+
+    //Ranges from ROLI's config table
+    pitchBendRange = clamp(1, 96, pitchBendRange);
+    strikeSensitivity = clamp(0, 127, strikeSensitivity);
+    pressureSensitivity = clamp(0, 127, pressureSensitivity);
+    liftSensitivity = clamp(0, 127, liftSensitivity);
+    brightness = clamp(0, 100, brightness);
+
+    applyConfig(configItemId_pbrange, pitchBendRange);
+    applyConfig(10, strikeSensitivity); // strike sensitivity
+    applyConfig(13, pressureSensitivity); // press sensitivity
+    applyConfig(14, liftSensitivity); // lift sensitivity
+    applyConfig(configItemId_brightness, brightness);
+
+    tOn = map(float(onBright), 0.0, 100.0, 0.0, 1.0);
+    tOff = map(float(offBright), 0.0, 100.0, 0.0, 1.0);
+
+    cacheCols();
+}
+
+//Written only when it differs, since the keyboard may save its settings to flash
+void applyConfig(int item, int value)
+{
+    if (getLocalConfig(item) != value)
+        setLocalConfig(item, value);
+}
+
+int getValue(int n)
+{
+    if (n < 24)
+        return keyCols[n][0];
+
+    if (n < 48)
+        return keyCols[n - 24][1];
+
+    if (n < 59)
+        return keyCols[n - 48][2];
+
+    if (n == 59) return onBright;
+    if (n == 60) return offBright;
+    if (n == 61) return midiChan;
+    if (n == 62) return polyAT;
+    if (n == 63) return mpeMode;
+    if (n == 64) return mpeUpperZone;
+    if (n == 65) return mpeMembers;
+    if (n == 66) return toggleVel;
+    if (n == 67) return fixedVel;
+    if (n == 68) return toggleVB;
+    if (n == 69) return fadeColors;
+    if (n == 70) return fadeInc;
+    if (n == 71) return pitchBendRange;
+    if (n == 72) return strikeSensitivity;
+    if (n == 73) return pressureSensitivity;
+    if (n == 74) return liftSensitivity;
+    if (n == 75) return brightness;
+
+    return 0;
+}
+
+//Wrapping sum of all values, so the editor can tell the program holds what it sent
+int valueSum()
+{
+    int sum = onBright + offBright + midiChan + polyAT + mpeMode + mpeUpperZone + mpeMembers + toggleVel + fixedVel + toggleVB + fadeColors + fadeInc;
+    sum = sum + pitchBendRange + strikeSensitivity + pressureSensitivity + liftSensitivity + brightness;
+
+    for (int i = 0; i < maxKeys; i++)
+        sum = sum + keyCols[i][0] + keyCols[i][1];
+
+    for (int j = 0; j < 11; j++)
+        sum = sum + keyCols[j][2];
+
+    return sum;
+}
+
+//Spread over frames: how many messages the keyboard can send at once isn't documented
+void sendReport()
+{
+    for (int k = 0; k < 4; k++)
+    {
+        if (reportStep >= valueCount)
+        {
+            sendMessageToHost(msgReport, valueCount, valueSum());
+            reportStep = -1;
+            return;
+        }
+
+        sendMessageToHost(msgValues + reportStep, getValue(reportStep), getValue(reportStep + 1));
+        reportStep += 2;
+    }
+}
+
+//Only the editor sends messages, and the program only sends messages to answer them:
+//every message also reaches the MIDI port as SysEx
+void handleMessage(int p1, int p2, int p3)
+{
+    if (p1 == msgInfo)
+    {
+        int flags = 256;
+
+        if (heapValues)
+            flags += 1;
+
+        if (toggleCols)
+            flags += 2;
+
+        sendMessageToHost(msgInfo, buildId, flags);
+    }
+    else if (p1 == msgReport)
+    {
+        reportStep = 0;
+    }
+    else if (p1 == msgApply)
+    {
+        loadHeap();
+        applyValues();
+        heapValues = true;
+
+        if (p2 == 1)
+            toggleCols = true;
+
+        sendMessageToHost(msgApply, valueSum(), 0);
+    }
+    else if (p1 == msgRevert)
+    {
+        loadBaked();
+        applyValues();
+        heapValues = false;
+        sendMessageToHost(msgRevert, valueSum(), 0);
+    }
+}
+
+void lightKey(int index, int vel)
+{
+    keyCols[index][3] = vel;
+    keyCols[index][6] = litCol(index, vel);
+}
+
+void unlightKey(int index)
+{
+    //A note-off for a key that's already dark (e.g. the host echoing a lift) mustn't restart its fade
+    if (fadeColors != 0 && keyCols[index][3])
+        keyCols[index][5] = 100;
+
+    keyCols[index][3] = 0;
+}
+
+//MIDI Handling
+const int midiNoteOff         = 0x8;
+const int midiNoteOn          = 0x9;
+
+void handleMIDI (int byte0, int byte1, int byte2)
+{
+    int status = (byte0 >> 4) & 0xf;
+
+    //Only notes light keys, an MPE stream coming back is mostly bend and pressure
+    if (status != midiNoteOn && status != midiNoteOff)
+        return;
+
+    int key = getKey (byte1);
+
+    //Arrays aren't bounds checked, a -1 row writes into whatever precedes keyCols on the heap
+    if (key < 0)
+        return;
+
+    if (status == midiNoteOn && byte2 > 0)
+        lightKey(key, byte2);
+    else
+        unlightKey(key);
+}
+
+//0 = single channel, 1 = MPE lower zone, 2 = MPE upper zone
+int getZone()
+{
+    if (mpeMode == 0)
+        return 0;
+
+    return mpeUpperZone != 0 ? 2 : 1;
+}
+
+int getManagerChan()
+{
+    return mpeUpperZone != 0 ? 15 : 0;
+}
+
+//Member channels count inward from the manager channel
+int getMemberChan(int i)
+{
+    return mpeUpperZone != 0 ? 14 - i : 1 + i;
+}
+
+//Round robin over idle channels: a just-released channel comes round last, so its release tail isn't bent
+//by the next note, and the search usually stops at the first channel tried.
+//With every channel busy, share the one with the fewest, oldest notes
+int allocChannel()
+{
+    for (int n = 0; n < mpeMembers; n++)
+    {
+        int i = (nextChan + n) % mpeMembers;
+        int ch = mpeUpperZone != 0 ? 14 - i : 1 + i;
+
+        if (chanNotes[ch] == 0)
+        {
+            nextChan = i + 1;
+            return ch;
+        }
+    }
+
+    int best = -1;
+    int c = mpeUpperZone != 0 ? 14 : 1;
+    int step = mpeUpperZone != 0 ? -1 : 1;
+
+    for (int j = 0; j < mpeMembers; j++)
+    {
+        if (best < 0 || chanNotes[c] < chanNotes[best] || (chanNotes[c] == chanNotes[best] && chanStamp[c] < chanStamp[best]))
+            best = c;
+
+        c += step;
+    }
+
+    return best;
+}
+
+void sendBend(int ch, int value)
+{
+    if (chanBend[ch] != value)
+    {
+        chanBend[ch] = value;
+        sendPitchBend(ch, value);
+    }
+}
+
+void sendPressure(int ch, int value)
+{
+    if (chanPress[ch] != value)
+    {
+        chanPress[ch] = value;
+        sendChannelPressure(ch, value);
+    }
+}
+
+void sendRPN(int ch, int param, int value)
+{
+    sendCC(ch, 101, 0);
+    sendCC(ch, 100, param);
+    sendCC(ch, 6, value);
+
+    if (param == 0)
+        sendCC(ch, 38, 0); //bend range cents
+
+    //Deselect, so a later data entry message can't change it
+    sendCC(ch, 101, 127);
+    sendCC(ch, 100, 127);
+}
+
+//One step per frame (~25 Hz) so announcing all member channels doesn't flood the MIDI link
+void sendZoneStep(int bend)
+{
+    //The MPE Configuration Message resets member bend ranges to 48, so it goes first
+    if (mcmStep == 0)
+        sendRPN(getManagerChan(), 6, mpeMembers);
+    else
+        sendRPN(getMemberChan(mcmStep - 1), 0, bend);
+
+    mcmStep++;
+
+    if (mcmStep > mpeMembers)
+        mcmStep = -1;
+}
+
+void startNote(int index, int vel)
+{
+    int note = getNote (index);
+
+    if (note < 0)
+        return;
+
+    int ch = midiChan - 1;
+
+    if (mpeMode != 0)
+    {
+        ch = allocChannel();
+
+        //Clear the bend and pressure the channel's previous note left behind
+        sendBend(ch, 8192);
+        sendPressure(ch, 0);
+    }
+
+    chanNotes[ch] = chanNotes[ch] + 1;
+    stampCount++;
+    chanStamp[ch] = stampCount;
+
+    keyCols[index][7] = note + 1;
+    keyCols[index][8] = ch;
+    keyCols[index][10] = -1;
+
+    sendNoteOn(ch, note, vel);
+}
+
+void stopNote(int index, int vel)
+{
+    if (keyCols[index][7] == 0)
+        return;
+
+    int ch = keyCols[index][8];
+
+    sendNoteOff(ch, keyCols[index][7] - 1, vel);
+    keyCols[index][7] = 0;
+
+    if (chanNotes[ch] > 0)
+        chanNotes[ch] = chanNotes[ch] - 1;
+
+    stampCount++;
+    chanStamp[ch] = stampCount;
+}
+
+void releaseAllNotes()
+{
+    for (int i = 0; i < maxKeys; i++)
+    {
+        if (keyCols[i][7])
+        {
+            stopNote(i, 0);
+            sendBend(keyCols[i][8], 8192);
+        }
+
+        keyCols[i][4] = false;
+    }
+
+    cPB = 0;
+}
+
+void checkMidiConfig()
+{
+    int zone = getZone();
+    int bend = getLocalConfig(configItemId_pbrange);
+
+    //Notes started under the old settings would otherwise hang or land on the wrong channels
+    if (zone != lastZone || mpeMembers != lastMembers || midiChan != lastChan)
+    {
+        releaseAllNotes();
+
+        //0 member channels tells the receiver the old zone is gone
+        if (lastZone > 0 && zone != lastZone)
+            sendRPN(lastZone == 2 ? 15 : 0, 6, 0);
+
+        lastZone = zone;
+        lastMembers = mpeMembers;
+        lastChan = midiChan;
+        nextChan = 0;
+        mcmStep = 0;
+    }
+
+    //Announce again when the bend range changes
+    if (bend != lastBend)
+        mcmStep = 0;
+
+    lastBend = bend;
+
+    //...or when a host connects, ignoring dropouts under half a second so a flickering link can't restart it every frame
+    if (!isConnectedToHost())
+    {
+        if (hostOffFrames < 12)
+            hostOffFrames++;
+    }
+    else
+    {
+        if (hostOffFrames >= 12)
+            mcmStep = 0;
+
+        hostOffFrames = 0;
+    }
+
+    if (zone == 0)
+        mcmStep = -1;
+    else if (mcmStep >= 0)
+        sendZoneStep(bend);
+}
+
+
+void keyStrike(int index, int u, int vel)
+{
+    if (toggleVel != 0) vel = fixedVel;
+
+    lightKey(index, vel);
+
+    stopNote(index, 0);
+    startNote(index, vel);
+}
+
+void keyPress(int index, int at, int vel)
+{
+    if (keyCols[index][7] == 0)
+        return;
+
+    //MPE pressure is per note by way of its own channel
+    if(polyAT != 0 && mpeMode == 0)
+    {
+        if (keyCols[index][10] != at)
+        {
+            keyCols[index][10] = at;
+            sendAftertouch (keyCols[index][8], keyCols[index][7] - 1, at);
+        }
+    }
+    else
+        sendPressure(keyCols[index][8], at);
+
+}
+
+void keyMove (int index, int pb, int at)
+{
+    if (keyCols[index][7] == 0)
+        return;
+
+    if(!keyCols[index][4]){keyCols[index][4] = true; cPB++;}
+
+    sendBend(keyCols[index][8], pb);
+}
+
+void keyLift(int index, int u, int vel)
+{
+    unlightKey(index);
+    if(keyCols[index][4]){keyCols[index][4] = false; cPB--;}
+
+    stopNote(index, vel);
+
+    //Single channel: reset PitchBend if counter is zero
+    //MPE: leave it so the release tail keeps its pitch, the channel's next note clears it
+    if (mpeMode == 0 && cPB == 0)
+        sendBend(midiChan - 1, 8192);
+}
+
+void renderOctaveBtns()
+{
+    if (curOct > minOct)
+        fillPixel (keyCols[curOct + 2][2], 0, 1);
+    else
+        fillPixel (0, 0, 1);
+
+    if (curOct < maxOct)
+        fillPixel (keyCols[curOct + 2][2], 1, 1);
+    else
+        fillPixel (0, 1, 1);
+}
+
+//Draws the colors worked out when keys light and values load; only keys that are fading blend
+void renderKeys()
+{
+    for (int i = 0; i < maxKeys; i++)
+    {
+        if (keyCols[i][3])
+        {
+            fillPixel(keyCols[i][6], i, 0);
+        }
+        else if (keyCols[i][5] > 0)
+        {
+            fillPixel(blendCol(keyCols[i][9], keyCols[i][6], keyCols[i][5]), i, 0);
+            keyCols[i][5] = keyCols[i][5] - fadeInc;
+        }
+        else
+        {
+            fillPixel(keyCols[i][9], i, 0);
+        }
+    }
+}
+
+void repaint()
+{
+    if (reportStep >= 0)
+        sendReport();
+
+    checkMidiConfig();
+
+    if(toggleCols){
+
+        //Render key colors
+        renderKeys();
+
+        //Render Octave Buttons
+        renderOctaveBtns();
+    }
+    else{
+        clearDisplay();
+    }
+
+}
