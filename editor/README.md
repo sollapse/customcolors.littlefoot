@@ -30,22 +30,17 @@ If the keyboard runs another program, such as the Dashboard version of the scrip
 ## Files
 
 - `editor.html`, `editor_ui.js`: the page.
-- `editor_core.js`: the values, file format, program patching and keyboard session. It also loads in Node for the tests.
+- `editor_core.js`: the values, file format, program patching and keyboard session. It also loads in Node, which `tools/convert_mode.js` uses.
 - `blocks.js`: the BLOCKS host protocol, ported from ROLI's BLOCKS SDK under its ISC licence (the notice is in the file), with two additions for the editor: taking over a known running program without uploading, and not resending memory after a lost connection.
 - `editor_program.littlefoot`: the program. `editor_program.js`: the program compiled, with its placeholder offsets and build id. Generated, don't edit.
 - `presets/1.json`: the Dashboard preset named "1", converted with `tools/convert_mode.js`. Load it with **Import file**.
-- `tools/`: the generator, simulator, profiler, tests and a converter for Dashboard presets.
+- `tools/`: the generator, the simulator, the profiler and a converter for Dashboard presets.
 
-## Regenerating and testing
+## Regenerating
 
-The page and the JS tools need nothing but a browser and Node, on any system. The C++ tools build against JUCE's `juce_core` and ROLI's `roli_blocks_basics` (https://github.com/WeAreROLI/roli_blocks_basics). They need the native function list from `protocol/roli_BlocksProtocolDefinitions.h` (`ledProgramLittleFootFunctions`, renamed `lfNatives`) saved as `natives.inc`. They are plain C++ and build with g++ or clang++ on Linux and macOS, where `juce_core` compiles as Objective-C++ and wants its usual frameworks; on Windows they build the same way inside WSL, which is where the tests look for the simulator.
+The page and `tools/convert_mode.js` need nothing but a browser and Node, on any system. The C++ tools build against JUCE's `juce_core` and ROLI's `roli_blocks_basics` (https://github.com/WeAreROLI/roli_blocks_basics). They need the native function list from `protocol/roli_BlocksProtocolDefinitions.h` (`ledProgramLittleFootFunctions`, renamed `lfNatives`) saved as `natives.inc`. They are plain C++ and build with g++ or clang++ on Linux and macOS, where `juce_core` compiles as Objective-C++ and wants its usual frameworks; on Windows they build the same way inside WSL.
 
 - `tools/lfgen.cpp`: `lfgen editor_program.littlefoot editor_program.js editor_program.bin EDITOR_PROGRAM` compiles the program, finds the placeholders (it fails if one is missing, repeated or out of sequence), writes the build id and writes the JS file. Run it after changing the program.
 - `tools/lfsim.cpp`: runs a script or a compiled `.bin` against a scenario of key, button, MIDI, setting, shared-memory and message events, and logs MIDI, LEDs and messages.
 - `tools/lfprof.cpp`: instructions and native calls per callback for a scenario.
-- `tools/test_program.js`: runs the program in lfsim. It checks the program's messages, that a preview draws and plays like the same values written into the program, and MIDI and LED parity with `customcolors.littlefoot` across 8 scenarios.
-- `tools/test_editor.js`: the editor session against a simulated keyboard, and the value and file helpers.
 - `tools/convert_mode.js`: `node convert_mode.js preset.mode preset.json` turns a Dashboard preset of the script into a file the page imports, using the editor's own file code, and checks every value it wrote against the preset.
-- `tools/sdkvec.cpp`, `tools/test_blocks.js`: check `blocks.js` byte for byte against packets from the SDK's own C++ code (`sdk_vectors.json`).
-
-From `tools/`: `node test_editor.js`, `node test_blocks.js sdk_vectors.json` and `node test_program.js`. The last one runs lfsim in WSL on Windows and directly elsewhere; set `LFSIM` to the simulator's command if it isn't `~/lfcheck/build/lfsim` in WSL, or `lfsim` on the path.
