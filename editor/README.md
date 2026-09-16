@@ -9,7 +9,7 @@
 
 ## Using it
 
-- **Keys**: the switch picks whether the 24 swatches edit the on or the off colors, and the slider beside it sets that state's brightness. Each swatch has a color picker and the full 32-bit ARGB value in hex: 8 digits set every bit, 6 digits give an opaque color, and the picker keeps the alpha byte.
+- **Keys**: the keyboard shows all 24 keys in the colors they will light. The switch above it chooses whether you're editing the on or the off colors, and the slider beside it sets that state's brightness. Click a key to select it: the field names it, and the picker beside the field takes a color or the full 32-bit ARGB value in hex, where 8 digits set every bit, 6 digits give an opaque color, and the picker keeps the alpha byte. The key under the pointer and the selected key are outlined in white with a black line inside it, drawn within the key, so neither mark changes the color you're judging.
 - **Sensitivity**: strike, pressure and lift have Dashboard's response graphs, showing how hard you play for full output. The curve reaches the top at the level you set, and 127 is a straight line; the shape is read from Dashboard's own drawing code.
 - **Live preview**: while the keyboard runs customcolors, every change shows on it. A preview isn't kept: the keyboard goes back to its saved colors and settings when it restarts, when you disconnect, or with **Discard preview**.
 - **Save to keyboard** uploads the program with the current colors and settings written in, saves it as the keyboard's default, and reads the values back to check them. **Try on keyboard** uploads without saving.

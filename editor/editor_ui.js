@@ -21,7 +21,6 @@ let tickTimer = 0, uiTimer = 0, saveTimer = 0;
 let keyboardValuesOffered = null;   // the keyboard's values, while the page asks which to keep
 let firmware = '';
 const logLines = [];
-const keySwatches = [];
 const octaveSwatches = [];
 
 //==============================================================================
@@ -198,19 +197,248 @@ function makeSwatch (label, sharp, onChange)
     return swatch;
 }
 
-function buildEditors()
+//==============================================================================
+// The 24 keys drawn as the keyboard, two octaves in the proportions of a real one. A white key is drawn as the
+// shape you actually see, notched around the black keys sitting on it, so no two keys share any area.
+const KEY_W = 30, KEY_H = 160, BLACK_W = 18, BLACK_H = 100, BOARD_PAD = 8, KEY_GAP = 1.5, KEY_R = 4;
+const NOTCH_W = BLACK_W / 2 + KEY_GAP / 2;      // a notch clears its black key by the gap that separates two white keys
+const NOTCH_D = BLACK_H + KEY_GAP;
+const RING_INSETS = [0.75, 1.875];              // the white box's outer edge is the key's edge, the black line follows inside it
+const BOARD_W = BOARD_PAD * 2 + 14 * KEY_W, BOARD_H = BOARD_PAD * 2 + KEY_H;
+const WHITE_STEPS = [0, 2, 4, 5, 7, 9, 11];     // the semitones that are white keys
+
+const keyCells = [];                            // per key: its path, its number, and the two marking outlines
+let selectedKey = -1;
+
+const roundTo = v => Math.round (v * 100) / 100;
+
+function svgEl (name, attrs)
+{
+    const el = document.createElementNS (SVG_NS, name);
+
+    for (const key in attrs)
+        el.setAttribute (key, attrs[key]);
+
+    return el;
+}
+
+function keyGeometry()
+{
+    const keys = [];
+
+    for (let n = 0; n < Core.KEY_COUNT; ++n)
+    {
+        const oct = Math.floor (n / 12), s = n % 12;
+
+        if (SHARP.includes (s))
+        {
+            //A black key straddles the line between the two white keys it sits between
+            const below = WHITE_STEPS.filter (w => w < s).length - 1;
+            const centre = BOARD_PAD + (oct * 7 + below + 1) * KEY_W;
+            keys.push ({ black: true, x: centre - BLACK_W / 2, y: BOARD_PAD, w: BLACK_W, h: BLACK_H });
+        }
+        else
+        {
+            const x = BOARD_PAD + (oct * 7 + WHITE_STEPS.indexOf (s)) * KEY_W;
+            keys.push ({ black: false, x: x + KEY_GAP / 2, y: BOARD_PAD, w: KEY_W - KEY_GAP, h: KEY_H,
+                         notchLeft: SHARP.includes (s - 1), notchRight: SHARP.includes (s + 1) });
+        }
+    }
+
+    return keys;
+}
+
+//Square at the top, rounded at the front. Shrinking the shape moves every edge inward, which widens and deepens a notch
+function keyPath (k, inset)
+{
+    const i = inset || 0;
+    const r = Math.max (0.5, (k.black ? KEY_R - 1 : KEY_R) - i);
+    const x = roundTo (k.x + i), y = roundTo (k.y + i);
+    const right = roundTo (k.x + k.w - i), bottom = roundTo (k.y + k.h - i);
+
+    if (k.black)
+        return `M${x},${y} H${right} V${roundTo (bottom - r)} a${r},${r} 0 0 1 ${-r},${r}`
+             + ` H${roundTo (x + r)} a${r},${r} 0 0 1 ${-r},${-r} Z`;
+
+    const depth = roundTo (k.y + NOTCH_D + i);
+    const left = k.notchLeft ? roundTo (k.x + NOTCH_W + i) : x;
+    const stem = k.notchRight ? roundTo (k.x + k.w - NOTCH_W - i) : right;
+    const parts = [`M${left},${y}`, `H${stem}`];
+
+    if (k.notchRight)
+        parts.push (`V${depth}`, `H${right}`);
+
+    parts.push (`V${roundTo (bottom - r)}`, `a${r},${r} 0 0 1 ${-r},${r}`,
+                `H${roundTo (x + r)}`, `a${r},${r} 0 0 1 ${-r},${-r}`);
+
+    if (k.notchLeft)
+        parts.push (`V${depth}`, `H${left}`);
+
+    parts.push (`V${y}`, 'Z');
+    return parts.join (' ');
+}
+
+function buildKeyboard()
+{
+    const board = $('keys');
+    const white = svgEl ('g', {}), black = svgEl ('g', {}), numbers = svgEl ('g', { 'aria-hidden': 'true' });
+
+    board.setAttribute ('viewBox', `0 0 ${BOARD_W} ${BOARD_H}`);
+    board.appendChild (svgEl ('rect', { class: 'bed', x: 0, y: 0, width: BOARD_W, height: BOARD_H, rx: 6 }));
+
+    keyGeometry().forEach ((k, i) =>
+    {
+        const path = svgEl ('path', { class: 'key', d: keyPath (k), tabindex: 0, role: 'button',
+                                      'aria-label': `Key ${i + 1}` });
+        const title = svgEl ('title', {});
+        title.textContent = `Key ${i + 1}`;
+        path.appendChild (title);
+
+        const number = svgEl ('text', { class: 'number', x: roundTo (k.x + k.w / 2),
+                                        y: roundTo (k.y + k.h - (k.black ? 12 : 16)) });
+        number.textContent = String (i + 1);
+
+        (k.black ? black : white).appendChild (path);
+        numbers.appendChild (number);
+        keyCells.push ({ path, number, ring: keyPath (k, RING_INSETS[0]), inner: keyPath (k, RING_INSETS[1]) });
+
+        path.addEventListener ('pointerover', () => markKey ('hover', i));
+        path.addEventListener ('focus', () => markKey ('hover', i));
+        path.addEventListener ('click', () => selectKey (i));
+        path.addEventListener ('keydown', e =>
+        {
+            if (e.key === 'Enter' || e.key === ' ')
+            {
+                e.preventDefault();
+                selectKey (i);
+            }
+        });
+    });
+
+    board.append (white, black, numbers);
+
+    //Drawn last, so a mark is never hidden behind the key next to it
+    for (const kind of ['selected', 'hover'])
+    {
+        const g = svgEl ('g', { class: `indicator ${kind}`, 'aria-hidden': 'true' });
+        g.append (svgEl ('path', { class: 'ring-outer' }), svgEl ('path', { class: 'ring-inner' }));
+        board.appendChild (g);
+    }
+
+    board.addEventListener ('pointerleave', () => clearMark ('hover'));
+    board.addEventListener ('focusout', () => clearMark ('hover'));
+}
+
+function markKey (which, i)
+{
+    const g = $('keys').querySelector (`.indicator.${which}`);
+    g.querySelector ('.ring-outer').setAttribute ('d', keyCells[i].ring);
+    g.querySelector ('.ring-inner').setAttribute ('d', keyCells[i].inner);
+    g.classList.add ('on');
+}
+
+function clearMark (which)
+{
+    $('keys').querySelector (`.indicator.${which}`).classList.remove ('on');
+}
+
+function selectKey (i)
+{
+    selectedKey = i;
+    markKey ('selected', i);
+    renderPicked();
+}
+
+//Relative luminance, so a key's number stays legible whatever color the key is
+function readableOn (argb)
+{
+    const lin = v => { const f = v / 255; return f <= 0.03928 ? f / 12.92 : Math.pow ((f + 0.055) / 1.055, 2.4); };
+    const l = 0.2126 * lin ((argb >> 16) & 0xFF) + 0.7152 * lin ((argb >> 8) & 0xFF) + 0.0722 * lin (argb & 0xFF);
+    return l > 0.4 ? '#14161a' : '#ffffff';
+}
+
+function paintKey (i)
+{
+    const v = (editOn ? state.on : state.off)[i] >>> 0;
+    keyCells[i].path.style.fill = Core.cssColor (v);
+    keyCells[i].number.style.fill = readableOn (v);
+}
+
+function renderKeys()
 {
     for (let i = 0; i < Core.KEY_COUNT; ++i)
-    {
-        const s = makeSwatch (`Key ${i + 1}`, SHARP.includes (i % 12), v =>
-        {
-            (editOn ? state.on : state.off)[i] = v;
-            changed (true);
-        });
+        paintKey (i);
 
-        keySwatches.push (s);
-        $('keys').appendChild (s.cell);
+    if (selectedKey >= 0)
+        markKey ('selected', selectedKey);
+
+    renderPicked();
+}
+
+//The field names the selected key and the picker edits it, both following the selection and never the pointer
+function renderPicked()
+{
+    const picked = selectedKey >= 0;
+    const value = picked ? (editOn ? state.on : state.off)[selectedKey] >>> 0 : 0;
+
+    $('pickedName').value = picked ? `Key ${selectedKey + 1}` : 'None';
+    $('pickedColor').disabled = ! picked;
+    $('pickedHex').disabled = ! picked;
+    $('pickedColor').value = Core.cssColor (value);
+
+    if (document.activeElement !== $('pickedHex'))
+    {
+        $('pickedHex').value = picked ? Core.formatColor (value) : '';
+        $('pickedHex').classList.remove ('invalid');
     }
+}
+
+function makeKeyPicker()
+{
+    const color = $('pickedColor'), hex = $('pickedHex');
+
+    const apply = v =>
+    {
+        (editOn ? state.on : state.off)[selectedKey] = v >>> 0;
+        paintKey (selectedKey);
+        changed (true);
+    };
+
+    color.addEventListener ('input', () =>
+    {
+        if (selectedKey < 0)
+            return;
+
+        //The picker has no alpha, so the key keeps the alpha byte it already had
+        const current = (editOn ? state.on : state.off)[selectedKey] >>> 0;
+        const v = ((current & 0xFF000000) | parseInt (color.value.slice (1), 16)) >>> 0;
+        hex.value = Core.formatColor (v);
+        hex.classList.remove ('invalid');
+        apply (v);
+    });
+
+    hex.addEventListener ('input', () =>
+    {
+        if (selectedKey < 0)
+            return;
+
+        const v = Core.parseColor (hex.value);
+        hex.classList.toggle ('invalid', v === null);
+
+        if (v === null)
+            return;
+
+        color.value = Core.cssColor (v);
+        apply (v);
+    });
+
+    hex.addEventListener ('blur', renderPicked);
+}
+
+function buildEditors()
+{
+    buildKeyboard();
+    makeKeyPicker();
 
     for (let j = 0; j < Core.OCTAVE_COUNT; ++j)
     {
@@ -310,8 +538,7 @@ function setEditOn (on)
 
 function render()
 {
-    const colors = editOn ? state.on : state.off;
-    keySwatches.forEach ((s, i) => s.set (colors[i]));
+    renderKeys();
     octaveSwatches.forEach ((s, j) => s.set (state.octave[j]));
 
     $('editOn').checked = editOn;
