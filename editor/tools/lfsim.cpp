@@ -56,6 +56,10 @@ static int32 fromFloat (float f) { int32 v; std::memcpy (&v, &f, sizeof (v)); re
 
 using Impl = NativeFunction::ImplementationFunction;
 static const std::map<std::string, Impl> impls = {
+    //Raw bytes, logged in hex: these are what a program would use to build a message of its own
+    { "sendMIDI/vi",              +[] (void*, const int32* a) -> int32 { std::printf ("    MIDI %02X\n", a[0] & 0xFF); return 0; } },
+    { "sendMIDI/vii",             +[] (void*, const int32* a) -> int32 { std::printf ("    MIDI %02X %02X\n", a[0] & 0xFF, a[1] & 0xFF); return 0; } },
+    { "sendMIDI/viii",            +[] (void*, const int32* a) -> int32 { std::printf ("    MIDI %02X %02X %02X\n", a[0] & 0xFF, a[1] & 0xFF, a[2] & 0xFF); return 0; } },
     { "sendNoteOn/viii",          +[] (void*, const int32* a) -> int32 { logm ("NoteOn     ", a, 3); return 0; } },
     { "sendNoteOff/viii",         +[] (void*, const int32* a) -> int32 { logm ("NoteOff    ", a, 3); return 0; } },
     { "sendAftertouch/viii",      +[] (void*, const int32* a) -> int32 { logm ("PolyAT     ", a, 3); return 0; } },
