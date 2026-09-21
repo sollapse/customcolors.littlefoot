@@ -55,17 +55,17 @@
     "0xFF0025FF"
   ],
   "octaveColors": [
-    "0xFF0099FF",
-    "0xFF37B6FF",
-    "0xFF65C6FF",
-    "0xFF72DFFF",
-    "0xFF8FE4FF",
-    "0xFFA4EAFF",
-    "0xFFFFFFFF",
+    "0xFFDB6108",
+    "0xFFE16F1D",
+    "0xFFE77D31",
+    "0xFFED8A46",
+    "0xFFF3985A",
     "0xFFF9A66F",
-    "0xFFFA974F",
-    "0xFFF47F30",
-    "0xFFDB6108"
+    "0xFFFFFFFF",
+    "0xFFA4EAFF",
+    "0xFF6DCFFF",
+    "0xFF37B4FF",
+    "0xFF0099FF"
   ],
   "settings": {
     "onBright": 100,
