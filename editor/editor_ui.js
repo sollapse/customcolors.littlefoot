@@ -24,8 +24,8 @@ const logLines = [];
 const octaveSwatches = [];
 const bendPressSwatches = [];
 
-// The pitch bend colors, then the pressure colors, as the page shows them
-const BEND_PRESS = [['Bend down', 'bend'], ['Bend center', 'bend'], ['Bend up', 'bend'], ['No pressure', 'pressure'], ['Full pressure', 'pressure']];
+// The pitch bend colors, then the full pressure color, as the page shows them
+const BEND_PRESS = [['Bend down', 'bend'], ['Bend up', 'bend'], ['Full pressure', 'pressure']];
 
 //==============================================================================
 // Storage can be missing or refuse writes (private windows, blocked site data): the page works without it

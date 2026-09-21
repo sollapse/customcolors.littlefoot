@@ -8,7 +8,7 @@
 
 ## Pitch bend and pressure colors
 
-Keys you hold can follow their pitch bend and pressure in color, chosen with Held Keys Follow (0 nothing, 1 pitch bend, 2 pressure, 3 both). A bend moves from the center color toward the down or up color, all the way at the key's full travel; pressure mixes from the no-pressure color to the full one. With both, pressure sets the color and a bend moves it. Keys lit by incoming notes keep their own on colors.
+Keys you hold can follow their pitch bend and pressure in color, chosen with Held Keys Follow (0 nothing, 1 pitch bend, 2 pressure, 3 both). A held key starts from its own on color: pressure mixes it toward the full pressure color, and a bend moves it toward the down or up color, all the way at the key's full travel. With both, pressure sets the color and a bend moves it. Keys lit by incoming notes keep their own on colors.
 
 ## Messages from a host
 
@@ -19,8 +19,8 @@ A plug-in or other host can recolor the keys and octave buttons live during a se
 | `HCOL` host color mode | `0x48434F4C` | 1 on, 0 off | unused |
 | `KCOL` key color | `0x4B434F4C` | key 0-23 (Key 1-24) for its off color, 256 + key for its on color | color, `0xRRGGBBAA` |
 | `OCOL` octave button color | `0x4F434F4C` | octave, -2 to 8 | color, `0xRRGGBBAA` |
-| `BCOL` pitch bend color | `0x42434F4C` | 0 down, 1 center, 2 up | color, `0xRRGGBBAA` |
-| `PCOL` pressure color | `0x50434F4C` | 0 no pressure, 1 full | color, `0xRRGGBBAA` |
+| `BCOL` pitch bend color | `0x42434F4C` | 0 down, 1 up | color, `0xRRGGBBAA` |
+| `PCOL` pressure color | `0x50434F4C` | 0 full pressure | color, `0xRRGGBBAA` |
 | `GOCT` get octave | `0x474F4354` | unused | unused |
 
 - Host color mode is for other software, such as a plug-in, and is off whenever the script starts. `KCOL`, `OCOL`, `BCOL` and `PCOL` work only while it's on: each color the host sends shows in place of the saved one, and the rest keep their saved colors. Nothing is saved: turning the mode off puts the saved colors back everywhere, and turning it on again starts from them. Turning it on while it's on keeps the host's colors.

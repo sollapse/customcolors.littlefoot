@@ -44,25 +44,27 @@ const SETTINGS = [
     { name: 'bendPressColors',     min: 0, max: 3,   def: 0, since: 2 }
 ];
 
-// The pitch bend colors (down, center, up) and the pressure colors (off, full) follow the settings
-const BEND_COUNT = 3;
-const PRESSURE_COUNT = 2;
+// The pitch bend colors (down, up) and the full pressure color follow the settings; held keys start from their on colors
+const BEND_COUNT = 2;
+const PRESSURE_COUNT = 1;
 const BEND_BASE = SETTINGS_BASE + SETTINGS.length;
 const PRESSURE_BASE = BEND_BASE + BEND_COUNT;
-const BEND_DEFAULTS = [0xFFDB6108, 0xFFFFFFFF, 0xFF0099FF];
-const PRESSURE_DEFAULTS = [0xFFFFFFFF, 0xFFDB6108];
+const BEND_DEFAULTS = [0xFFDB6108, 0xFF0099FF];
+const PRESSURE_DEFAULTS = [0xFFDB6108];
 
 const VALUE_COUNT = PRESSURE_BASE + PRESSURE_COUNT;
 const HEAP_BLOCK_SIZE = VALUE_COUNT * 4;
 const DEFAULT_COLOR = 0xFFFFFFFF;
 
-// Program messages; replies use the same ids. Format 2 reports the pitch bend and pressure values too
+// Program messages; replies use the same ids. Format 2 added the pitch bend and pressure values, format 3 has three
+// of their colors where 2 had five
 const MSG = { info: 0x43430001, report: 0x43430002, apply: 0x43430003, revert: 0x43430004, values: 0x43430100 };
-const MESSAGE_FORMAT = 2;
+const MESSAGE_FORMAT = 3;
 
-// Version 2 added the pitch bend and pressure colors; version 1 files load with their defaults
+// Version 2 added the pitch bend and pressure colors, version 3 dropped the center and no-pressure ones for each key's on
+// color. Version 1 files load with the pitch bend and pressure colors at their defaults
 const FILE_FORMAT = 'customcolors-editor';
-const FILE_VERSION = 2;
+const FILE_VERSION = 3;
 
 //==============================================================================
 // 6 hex digits are an opaque color, 8 digits the full ARGB value; a leading '#' or '0x' is optional
@@ -254,10 +256,11 @@ function stateFromFile (data)
     // Version 1 files predate the pitch bend and pressure colors, which keep their defaults
     const v1 = data.version === 1;
 
-    if (data.version !== FILE_VERSION && ! v1)
-        problems.push (`File version ${data.version}, this editor reads versions 1 and ${FILE_VERSION}.`);
+    if (data.version !== FILE_VERSION && ! v1 && data.version !== 2)
+        problems.push (`File version ${data.version}, this editor reads versions 1 to ${FILE_VERSION}.`);
 
-    const readColors = (key, target, label) =>
+    // from: the entries of the file's list that fill target, in order
+    const readColors = (key, target, label, from = target.map ((v, i) => i)) =>
     {
         const list = data[key];
 
@@ -267,22 +270,28 @@ function stateFromFile (data)
             return;
         }
 
-        for (let i = 0; i < target.length; ++i)
+        from.forEach ((at, i) =>
         {
-            const v = i < list.length ? parseColor (list[i]) : null;
+            const v = at < list.length ? parseColor (list[at]) : null;
 
             if (v === null)
-                problems.push (`${label} ${i + 1}: ${i < list.length ? `"${list[i]}" is not a color` : 'missing'}.`);
+                problems.push (`${label} ${at + 1}: ${at < list.length ? `"${list[at]}" is not a color` : 'missing'}.`);
             else
                 target[i] = v;
-        }
+        });
     };
 
     readColors ('onColors', state.on, 'On color, key');
     readColors ('offColors', state.off, 'Off color, key');
     readColors ('octaveColors', state.octave, 'Octave button color');
 
-    if (! v1)
+    // Version 2 lists the pitch bend colors down, center and up, and the pressure colors off and full
+    if (data.version === 2)
+    {
+        readColors ('bendColors', state.bend, 'Pitch bend color', [0, 2]);
+        readColors ('pressureColors', state.pressure, 'Pressure color', [1]);
+    }
+    else if (! v1)
     {
         readColors ('bendColors', state.bend, 'Pitch bend color');
         readColors ('pressureColors', state.pressure, 'Pressure color');

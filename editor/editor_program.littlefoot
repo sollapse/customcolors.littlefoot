@@ -16,7 +16,7 @@
 
 //Shared memory holds the editor's values as 4-byte ints, value n at offset n * 4: 0-23 on colors, 24-47 off colors,
 //48-58 octave button colors, then the settings in the order loadBaked() sets them, the pitch bend and pressure colors
-#heapsize: 328
+#heapsize: 320
 
 //Globals
 const int configItemId_brightness = 36;
@@ -25,13 +25,13 @@ const int configItemId_pbrange = 3;
 const int maxKeys = 24;
 const int maxOct = 8;
 const int minOct = -2;
-const int valueCount = 82;
+const int valueCount = 80;
 
 //Build id, written by lfgen, so the editor only previews through shared memory laid out the way it expects
 const int buildId = 0x5A5A00FF;
 
 //Messages from the editor; replies use the same ids
-const int msgInfo = 0x43430001;   //reply: build id, flags (512 = message format 2, +1 values other than the program's (a preview or host colors), +2 lights on)
+const int msgInfo = 0x43430001;   //reply: build id, flags (768 = message format 3, +1 values other than the program's (a preview or host colors), +2 lights on)
 const int msgReport = 0x43430002; //reply: msgValues + n with values n and n + 1 for every even n, then msgReport, value count, value sum
 const int msgApply = 0x43430003;  //load the values from shared memory, p2 = 1 also turns the lights on; reply: value sum
 const int msgRevert = 0x43430004; //load the values written into the program; reply: value sum
@@ -41,8 +41,8 @@ const int msgValues = 0x43430100;
 const int HCOL = 0x48434F4C; //host color mode: p2 = 1 on, 0 off, which puts the saved colors back
 const int KCOL = 0x4B434F4C; //key color, in host color mode: p2 = key 0-23 for its off color, 256 + key for its on color; p3 = 0xRRGGBBAA
 const int OCOL = 0x4F434F4C; //octave button color, in host color mode: p2 = octave -2 to 8; p3 = 0xRRGGBBAA
-const int BCOL = 0x42434F4C; //pitch bend color, in host color mode: p2 = 0 down, 1 center, 2 up; p3 = 0xRRGGBBAA
-const int PCOL = 0x50434F4C; //pressure color, in host color mode: p2 = 0 off, 1 full; p3 = 0xRRGGBBAA
+const int BCOL = 0x42434F4C; //pitch bend color, in host color mode: p2 = 0 down, 1 up; p3 = 0xRRGGBBAA
+const int PCOL = 0x50434F4C; //pressure color, in host color mode: p2 = 0 full; p3 = 0xRRGGBBAA
 const int GOCT = 0x474F4354; //get octave: answered with GOCT, the octave (-2 to 8) and the note key 1 plays
 
 //Host color mode, for other software: the colors a host sends replace the loaded ones, which load again when it ends
@@ -71,8 +71,8 @@ int nextChan; //member channel the allocator tries first
 int chanBend[16];
 int chanPress[16];
 
-//Pitch bend colors down, center and up, then pressure colors off and full
-int bendPressCol[5];
+//Pitch bend colors down and up, then the full pressure color; held keys start from their on colors
+int bendPressCol[3];
 
 //2D array for on and off colors, octave button colors (11), key state, the key's latest pitch bend (+1, 0 until it
 //moves), key color fading, the lit color (worked out when the key lights, and as it bends or its pressure changes),
@@ -174,19 +174,19 @@ int litCol(int index, int vel)
     return onScaled(keyCols[index][0], vel);
 }
 
-//A finger-held key's color while bendPressColors is on: pressure (2) mixes from its off color to its full color, and a
-//pitch bend (1) then moves that, or the center color, toward the down or up color, all the way at the key's full travel
+//A finger-held key's color while bendPressColors is on: pressure (2) mixes its on color toward the full pressure color,
+//and a pitch bend (1) then moves that toward the down or up color, all the way at the key's full travel
 int heldCol(int i)
 {
-    int c = bendPressCol[1];
+    int c = keyCols[i][0];
 
     if (bendPressColors & 2)
-        c = blendCol(bendPressCol[3], bendPressCol[4], max(0, keyCols[i][10]) * 100 / 127);
+        c = blendCol(c, bendPressCol[2], max(0, keyCols[i][10]) * 100 / 127);
 
     if ((bendPressColors & 1) && keyCols[i][4] > 0)
     {
         int d = keyCols[i][4] - 8193;
-        c = blendCol(c, d < 0 ? bendPressCol[0] : bendPressCol[2], abs(d) * 100 / 8192);
+        c = blendCol(c, d < 0 ? bendPressCol[0] : bendPressCol[1], abs(d) * 100 / 8192);
     }
 
     return onScaled(c, keyCols[i][3]);
@@ -335,8 +335,6 @@ void loadBaked()
     bendPressCol[0] = 0x5A5A004D;
     bendPressCol[1] = 0x5A5A004E;
     bendPressCol[2] = 0x5A5A004F;
-    bendPressCol[3] = 0x5A5A0050;
-    bendPressCol[4] = 0x5A5A0051;
 }
 
 //Values the editor wrote to shared memory, same order
@@ -372,7 +370,7 @@ void loadHeap()
 
     bendPressColors = getHeapInt(304);
 
-    for (int k = 0; k < 5; k++)
+    for (int k = 0; k < 3; k++)
         bendPressCol[k] = getHeapInt(308 + k * 4);
 }
 
@@ -466,7 +464,7 @@ int valueSum()
 {
     int sum = onBright + offBright + midiChan + polyAT + mpeMode + mpeUpperZone + mpeMembers + toggleVel + fixedVel + toggleVB + fadeColors + fadeInc;
     sum = sum + pitchBendRange + strikeSensitivity + pressureSensitivity + liftSensitivity + brightness;
-    sum = sum + bendPressColors + bendPressCol[0] + bendPressCol[1] + bendPressCol[2] + bendPressCol[3] + bendPressCol[4];
+    sum = sum + bendPressColors + bendPressCol[0] + bendPressCol[1] + bendPressCol[2];
 
     for (int i = 0; i < maxKeys; i++)
         sum = sum + keyCols[i][0] + keyCols[i][1];
@@ -500,7 +498,7 @@ void handleMessage(int p1, int p2, int p3)
 {
     if (p1 == msgInfo)
     {
-        int flags = 512;
+        int flags = 768;
 
         if (heapValues || hostMode)
             flags += 1;
@@ -557,10 +555,10 @@ void handleMessage(int p1, int p2, int p3)
         {
             keyCols[p2 + 2][2] = argb;
         }
-        else if ((p1 == BCOL && p2 >= 0 && p2 < 3) || (p1 == PCOL && p2 >= 0 && p2 < 2))
+        else if ((p1 == BCOL && p2 >= 0 && p2 < 2) || (p1 == PCOL && p2 == 0))
         {
             //Keys held now take the new color at once
-            bendPressCol[p1 == BCOL ? p2 : 3 + p2] = argb;
+            bendPressCol[p1 == BCOL ? p2 : 2] = argb;
             cacheCols();
         }
     }

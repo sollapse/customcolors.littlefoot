@@ -96,9 +96,7 @@
             <variable group="octColors" name="octCol10" displayName="Octave 8" type="colour" value="0xFFFFFF" />
             <variable group="bendPress" name="bendPressColors" displayName="Held Keys Follow (0 nothing, 1 pitch bend, 2 pressure, 3 both)" type="int" min="0" max="3" value="0" />
             <variable group="bendPress" name="bendDownCol" displayName="Pitch Bend Down" type="colour" value="0xDB6108" />
-            <variable group="bendPress" name="bendCenterCol" displayName="Pitch Bend Center" type="colour" value="0xFFFFFF" />
             <variable group="bendPress" name="bendUpCol" displayName="Pitch Bend Up" type="colour" value="0x0099FF" />
-            <variable group="bendPress" name="pressOffCol" displayName="No Pressure" type="colour" value="0xFFFFFF" />
             <variable group="bendPress" name="pressFullCol" displayName="Full Pressure" type="colour" value="0xDB6108" />
     </variables>
 </metadata>
@@ -118,8 +116,8 @@ const int minOct = -2;
 const int HCOL = 0x48434F4C; //host color mode: p2 = 1 on, 0 off, which puts the saved colors back
 const int KCOL = 0x4B434F4C; //key color, in host color mode: p2 = key 0-23 for its off color, 256 + key for its on color; p3 = 0xRRGGBBAA
 const int OCOL = 0x4F434F4C; //octave button color, in host color mode: p2 = octave -2 to 8; p3 = 0xRRGGBBAA
-const int BCOL = 0x42434F4C; //pitch bend color, in host color mode: p2 = 0 down, 1 center, 2 up; p3 = 0xRRGGBBAA
-const int PCOL = 0x50434F4C; //pressure color, in host color mode: p2 = 0 off, 1 full; p3 = 0xRRGGBBAA
+const int BCOL = 0x42434F4C; //pitch bend color, in host color mode: p2 = 0 down, 1 up; p3 = 0xRRGGBBAA
+const int PCOL = 0x50434F4C; //pressure color, in host color mode: p2 = 0 full; p3 = 0xRRGGBBAA
 const int GOCT = 0x474F4354; //get octave: answered with GOCT, the octave (-2 to 8) and the note key 1 plays
 
 //Host color mode, for other software: the colors a host sends replace Dashboard's, which are read again when it ends
@@ -138,8 +136,8 @@ int nextChan; //member channel the allocator tries first
 int chanBend[16];
 int chanPress[16];
 
-//Pitch bend colors down, center and up, then pressure colors off and full
-int bendPressCol[5];
+//Pitch bend colors down and up, then the full pressure color; held keys start from their on colors
+int bendPressCol[3];
 
 //2D array for on and off colors, octave button colors (11), key state, the key's latest pitch bend (+1, 0 until it
 //moves), key color fading, the lit color (worked out when the key lights, and as it bends or its pressure changes),
@@ -239,19 +237,19 @@ int litCol(int index, int vel)
     return onScaled(keyCols[index][0], vel);
 }
 
-//A finger-held key's color while bendPressColors is on: pressure (2) mixes from its off color to its full color, and a
-//pitch bend (1) then moves that, or the center color, toward the down or up color, all the way at the key's full travel
+//A finger-held key's color while bendPressColors is on: pressure (2) mixes its on color toward the full pressure color,
+//and a pitch bend (1) then moves that toward the down or up color, all the way at the key's full travel
 int heldCol(int i)
 {
-    int c = bendPressCol[1];
+    int c = keyCols[i][0];
 
     if (bendPressColors & 2)
-        c = blendCol(bendPressCol[3], bendPressCol[4], max(0, keyCols[i][10]) * 100 / 127);
+        c = blendCol(c, bendPressCol[2], max(0, keyCols[i][10]) * 100 / 127);
 
     if ((bendPressColors & 1) && keyCols[i][4] > 0)
     {
         int d = keyCols[i][4] - 8193;
-        c = blendCol(c, d < 0 ? bendPressCol[0] : bendPressCol[2], abs(d) * 100 / 8192);
+        c = blendCol(c, d < 0 ? bendPressCol[0] : bendPressCol[1], abs(d) * 100 / 8192);
     }
 
     return onScaled(c, keyCols[i][3]);
@@ -385,10 +383,8 @@ void updateCols()
 
     //Pitch Bend and Pressure Colors
     bendPressCol[0] = bendDownCol;
-    bendPressCol[1] = bendCenterCol;
-    bendPressCol[2] = bendUpCol;
-    bendPressCol[3] = pressOffCol;
-    bendPressCol[4] = pressFullCol;
+    bendPressCol[1] = bendUpCol;
+    bendPressCol[2] = pressFullCol;
 }
 
 //A key is lit while a finger (column 3) or the host (column 11) has it on. Each source sets only its own column, so
@@ -469,10 +465,10 @@ void handleMessage(int p1, int p2, int p3)
         {
             keyCols[p2 + 2][2] = argb;
         }
-        else if ((p1 == BCOL && p2 >= 0 && p2 < 3) || (p1 == PCOL && p2 >= 0 && p2 < 2))
+        else if ((p1 == BCOL && p2 >= 0 && p2 < 2) || (p1 == PCOL && p2 == 0))
         {
             //Keys held now take the new color at once
-            bendPressCol[p1 == BCOL ? p2 : 3 + p2] = argb;
+            bendPressCol[p1 == BCOL ? p2 : 2] = argb;
             cacheCols();
         }
     }

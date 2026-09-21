@@ -16,8 +16,8 @@ const KEYBOARD_SETTINGS = {
 };
 
 // The script's names for the pitch bend and pressure colors, in the editor's order
-const BEND_NAMES = ['bendDownCol', 'bendCenterCol', 'bendUpCol'];
-const PRESSURE_NAMES = ['pressOffCol', 'pressFullCol'];
+const BEND_NAMES = ['bendDownCol', 'bendUpCol'];
+const PRESSURE_NAMES = ['pressFullCol'];
 
 const decode = s => s.replace (/&quot;/g, '"').replace (/&apos;/g, "'").replace (/&lt;/g, '<').replace (/&gt;/g, '>').replace (/&amp;/g, '&');
 const settingIndex = name => Core.SETTINGS_BASE + Core.SETTINGS.findIndex (s => s.name === name);
