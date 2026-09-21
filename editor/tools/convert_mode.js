@@ -15,6 +15,10 @@ const KEYBOARD_SETTINGS = {
     'Brightness': 'brightness'
 };
 
+// The script's names for the pitch bend and pressure colors, in the editor's order
+const BEND_NAMES = ['bendDownCol', 'bendCenterCol', 'bendUpCol'];
+const PRESSURE_NAMES = ['pressOffCol', 'pressFullCol'];
+
 const decode = s => s.replace (/&quot;/g, '"').replace (/&apos;/g, "'").replace (/&lt;/g, '<').replace (/&gt;/g, '>').replace (/&amp;/g, '&');
 const settingIndex = name => Core.SETTINGS_BASE + Core.SETTINGS.findIndex (s => s.name === name);
 
@@ -100,6 +104,10 @@ for (const { name, value } of variables)
         readColor (state.off, Core.OFF_BASE, Number (m[1]), value, name);
     else if ((m = /^octCol(\d+)$/.exec (name)) && Number (m[1]) < Core.OCTAVE_COUNT)
         readColor (state.octave, Core.OCTAVE_BASE, Number (m[1]), value, name);
+    else if (BEND_NAMES.includes (name))
+        readColor (state.bend, Core.BEND_BASE, BEND_NAMES.indexOf (name), value, name);
+    else if (PRESSURE_NAMES.includes (name))
+        readColor (state.pressure, Core.PRESSURE_BASE, PRESSURE_NAMES.indexOf (name), value, name);
     else if (KEYBOARD_SETTINGS[name])
         readSetting (KEYBOARD_SETTINGS[name], value, name);
     else if (Core.SETTINGS.some (s => s.name === name && s.config === undefined))
@@ -118,11 +126,13 @@ for (let n = 0; n < Core.VALUE_COUNT; ++n)
     if (n < Core.OFF_BASE)           missing.push (`keyOnCol${n} = ${Core.formatColor (state.on[n])}`);
     else if (n < Core.OCTAVE_BASE)   missing.push (`keyOffCol${n - Core.OFF_BASE} = ${Core.formatColor (state.off[n - Core.OFF_BASE])}`);
     else if (n < Core.SETTINGS_BASE) missing.push (`octCol${n - Core.OCTAVE_BASE} = ${Core.formatColor (state.octave[n - Core.OCTAVE_BASE])}`);
-    else
+    else if (n < Core.BEND_BASE)
     {
         const s = Core.SETTINGS[n - Core.SETTINGS_BASE];
         missing.push (`${s.name} = ${state.settings[s.name]}`);
     }
+    else if (n < Core.PRESSURE_BASE) missing.push (`${BEND_NAMES[n - Core.BEND_BASE]} = ${Core.formatColor (state.bend[n - Core.BEND_BASE])}`);
+    else                             missing.push (`${PRESSURE_NAMES[n - Core.PRESSURE_BASE]} = ${Core.formatColor (state.pressure[n - Core.PRESSURE_BASE])}`);
 }
 
 const json = JSON.stringify (Core.stateToFile (state, modeName), null, 2) + '\n';

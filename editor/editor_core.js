@@ -12,7 +12,7 @@
 
 //==============================================================================
 // Value numbers, as in editor_program.littlefoot: 0-23 on colors, 24-47 off colors, 48-58 octave button colors,
-// then the settings. Shared memory holds value n at offset n * 4.
+// then the settings, the pitch bend colors and the pressure colors. Shared memory holds value n at offset n * 4.
 const KEY_COUNT = 24;
 const OCTAVE_COUNT = 11;
 const OFF_BASE = KEY_COUNT;
@@ -39,19 +39,30 @@ const SETTINGS = [
     { name: 'strikeSensitivity',   min: 0, max: 127, def: 100, config: 10 },
     { name: 'pressureSensitivity', min: 0, max: 127, def: 100, config: 13 },
     { name: 'liftSensitivity',     min: 0, max: 127, def: 100, config: 14 },
-    { name: 'brightness',          min: 0, max: 100, def: 100, config: 36 }
+    { name: 'brightness',          min: 0, max: 100, def: 100, config: 36 },
+    // What held keys' colors follow: 0 nothing, 1 pitch bend, 2 pressure, 3 both. Version 1 files don't have it
+    { name: 'bendPressColors',     min: 0, max: 3,   def: 0, since: 2 }
 ];
 
-const VALUE_COUNT = SETTINGS_BASE + SETTINGS.length;
+// The pitch bend colors (down, center, up) and the pressure colors (off, full) follow the settings
+const BEND_COUNT = 3;
+const PRESSURE_COUNT = 2;
+const BEND_BASE = SETTINGS_BASE + SETTINGS.length;
+const PRESSURE_BASE = BEND_BASE + BEND_COUNT;
+const BEND_DEFAULTS = [0xFFDB6108, 0xFFFFFFFF, 0xFF0099FF];
+const PRESSURE_DEFAULTS = [0xFFFFFFFF, 0xFFDB6108];
+
+const VALUE_COUNT = PRESSURE_BASE + PRESSURE_COUNT;
 const HEAP_BLOCK_SIZE = VALUE_COUNT * 4;
 const DEFAULT_COLOR = 0xFFFFFFFF;
 
-// Program messages; replies use the same ids
+// Program messages; replies use the same ids. Format 2 reports the pitch bend and pressure values too
 const MSG = { info: 0x43430001, report: 0x43430002, apply: 0x43430003, revert: 0x43430004, values: 0x43430100 };
-const MESSAGE_FORMAT = 1;
+const MESSAGE_FORMAT = 2;
 
+// Version 2 added the pitch bend and pressure colors; version 1 files load with their defaults
 const FILE_FORMAT = 'customcolors-editor';
-const FILE_VERSION = 1;
+const FILE_VERSION = 2;
 
 //==============================================================================
 // 6 hex digits are an opaque color, 8 digits the full ARGB value; a leading '#' or '0x' is optional
@@ -84,13 +95,16 @@ function defaultState()
         on: new Array (KEY_COUNT).fill (DEFAULT_COLOR),
         off: new Array (KEY_COUNT).fill (DEFAULT_COLOR),
         octave: new Array (OCTAVE_COUNT).fill (DEFAULT_COLOR),
+        bend: BEND_DEFAULTS.slice(),
+        pressure: PRESSURE_DEFAULTS.slice(),
         settings
     };
 }
 
 function cloneState (s)
 {
-    return { on: s.on.slice(), off: s.off.slice(), octave: s.octave.slice(), settings: Object.assign ({}, s.settings) };
+    return { on: s.on.slice(), off: s.off.slice(), octave: s.octave.slice(), bend: s.bend.slice(), pressure: s.pressure.slice(),
+             settings: Object.assign ({}, s.settings) };
 }
 
 function clampSetting (s, value)
@@ -115,6 +129,12 @@ function stateToValues (state)
     for (let i = 0; i < OCTAVE_COUNT; ++i)
         values[OCTAVE_BASE + i] = state.octave[i] | 0;
 
+    for (let i = 0; i < BEND_COUNT; ++i)
+        values[BEND_BASE + i] = state.bend[i] | 0;
+
+    for (let i = 0; i < PRESSURE_COUNT; ++i)
+        values[PRESSURE_BASE + i] = state.pressure[i] | 0;
+
     SETTINGS.forEach ((s, i) =>
     {
         const v = clampSetting (s, state.settings[s.name]);
@@ -136,6 +156,12 @@ function valuesToState (values)
 
     for (let i = 0; i < OCTAVE_COUNT; ++i)
         state.octave[i] = values[OCTAVE_BASE + i] >>> 0;
+
+    for (let i = 0; i < BEND_COUNT; ++i)
+        state.bend[i] = values[BEND_BASE + i] >>> 0;
+
+    for (let i = 0; i < PRESSURE_COUNT; ++i)
+        state.pressure[i] = values[PRESSURE_BASE + i] >>> 0;
 
     SETTINGS.forEach ((s, i) =>
     {
@@ -210,6 +236,8 @@ function stateToFile (state, name)
         onColors: colors (state.on),
         offColors: colors (state.off),
         octaveColors: colors (state.octave),
+        bendColors: colors (state.bend),
+        pressureColors: colors (state.pressure),
         settings
     };
 }
@@ -223,8 +251,11 @@ function stateFromFile (data)
     const state = defaultState();
     const problems = [];
 
-    if (data.version !== FILE_VERSION)
-        problems.push (`File version ${data.version}, this editor reads version ${FILE_VERSION}.`);
+    // Version 1 files predate the pitch bend and pressure colors, which keep their defaults
+    const v1 = data.version === 1;
+
+    if (data.version !== FILE_VERSION && ! v1)
+        problems.push (`File version ${data.version}, this editor reads versions 1 and ${FILE_VERSION}.`);
 
     const readColors = (key, target, label) =>
     {
@@ -251,6 +282,12 @@ function stateFromFile (data)
     readColors ('offColors', state.off, 'Off color, key');
     readColors ('octaveColors', state.octave, 'Octave button color');
 
+    if (! v1)
+    {
+        readColors ('bendColors', state.bend, 'Pitch bend color');
+        readColors ('pressureColors', state.pressure, 'Pressure color');
+    }
+
     const settings = data.settings && typeof data.settings === 'object' ? data.settings : {};
 
     for (const s of SETTINGS)
@@ -258,7 +295,10 @@ function stateFromFile (data)
         const v = settings[s.name];
 
         if (v === undefined)
-            problems.push (`Setting ${s.name} is missing.`);
+        {
+            if (! (v1 && s.since === 2))
+                problems.push (`Setting ${s.name} is missing.`);
+        }
         else if (s.bool ? typeof v !== 'boolean' : typeof v !== 'number' || ! Number.isFinite (v))
             problems.push (`Setting ${s.name}: ${JSON.stringify (v)} is not ${s.bool ? 'true or false' : 'a number'}.`);
         else
@@ -762,7 +802,8 @@ function sensitivityCurve (t, value)
 }
 
 return {
-    KEY_COUNT, OCTAVE_COUNT, OFF_BASE, OCTAVE_BASE, SETTINGS_BASE, SETTINGS, VALUE_COUNT, HEAP_BLOCK_SIZE, DEFAULT_COLOR,
+    KEY_COUNT, OCTAVE_COUNT, OFF_BASE, OCTAVE_BASE, SETTINGS_BASE, SETTINGS, BEND_COUNT, PRESSURE_COUNT, BEND_BASE, PRESSURE_BASE,
+    VALUE_COUNT, HEAP_BLOCK_SIZE, DEFAULT_COLOR,
     MSG, MESSAGE_FORMAT, FILE_FORMAT, FILE_VERSION, SENSITIVITY,
     parseColor, formatColor, cssColor, defaultState, cloneState, clampSetting, stateToValues, valuesToState, valueSum,
     sameValues, patchProgram, heapBlock, stateToFile, stateFromFile, sensitivityCurve, ReportCollector, EditorSession

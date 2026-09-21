@@ -22,6 +22,10 @@ let keyboardValuesOffered = null;   // the keyboard's values, while the page ask
 let firmware = '';
 const logLines = [];
 const octaveSwatches = [];
+const bendPressSwatches = [];
+
+// The pitch bend colors, then the pressure colors, as the page shows them
+const BEND_PRESS = [['Bend down', 'bend'], ['Bend center', 'bend'], ['Bend up', 'bend'], ['No pressure', 'pressure'], ['Full pressure', 'pressure']];
 
 //==============================================================================
 // Storage can be missing or refuse writes (private windows, blocked site data): the page works without it
@@ -452,6 +456,23 @@ function buildEditors()
         $('octaves').appendChild (s.cell);
     }
 
+    BEND_PRESS.forEach (([label, group], j) =>
+    {
+        const s = makeSwatch (label, false, v =>
+        {
+            if (j < Core.BEND_COUNT)
+                state.bend[j] = v;
+            else
+                state.pressure[j - Core.BEND_COUNT] = v;
+
+            changed (true);
+        });
+
+        s.cell.dataset.group = group;
+        bendPressSwatches.push (s);
+        $('bendPressColors').appendChild (s.cell);
+    });
+
     for (const el of document.querySelectorAll ('[data-setting]'))
     {
         const s = Core.SETTINGS.find (x => x.name === el.dataset.setting);
@@ -473,6 +494,7 @@ function buildEditors()
                     return;
 
                 state.settings[s.name] = Core.clampSetting (s, el.value);
+                updateSettingGroups();
                 changed (el.hasAttribute ('data-lights'));
             });
 
@@ -540,6 +562,7 @@ function render()
 {
     renderKeys();
     octaveSwatches.forEach ((s, j) => s.set (state.octave[j]));
+    bendPressSwatches.forEach ((s, j) => s.set (j < Core.BEND_COUNT ? state.bend[j] : state.pressure[j - Core.BEND_COUNT]));
 
     $('editOn').checked = editOn;
     $('onSide').classList.toggle ('active', editOn);
@@ -569,9 +592,10 @@ function render()
 function updateSettingGroups()
 {
     const s = state.settings;
-    const dim = { single: s.mpeMode, mpe: ! s.mpeMode, fixedVel: ! s.toggleVel, fade: ! s.fadeColors };
+    const dim = { single: s.mpeMode, mpe: ! s.mpeMode, fixedVel: ! s.toggleVel, fade: ! s.fadeColors,
+                  bend: ! (s.bendPressColors & 1), pressure: ! (s.bendPressColors & 2) };
 
-    for (const el of document.querySelectorAll ('.setting[data-group]'))
+    for (const el of document.querySelectorAll ('[data-group]'))
         el.classList.toggle ('disabled', !! dim[el.dataset.group]);
 }
 

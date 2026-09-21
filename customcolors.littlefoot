@@ -3,6 +3,7 @@
   by sollapse/2025
 
   Allows for customizing per-key colors for on and off states and the octave buttons, along with fading between key colors when active.
+  Held keys can follow their pitch bend and pressure in color instead.
   Outputs single channel MIDI or MPE (one lower or upper zone).
 
   Uses portions of the default ROLI LUMI Key script as a guide.
@@ -17,6 +18,7 @@
        <group name="offColors" displayName="Off Colors" />
        <group name="onColors" displayName="On Colors" />
        <group name="octColors" displayName="Octave Button Colors" />
+       <group name="bendPress" displayName="Pitch Bend and Pressure Colors" />
         
     </groups>
     <variables>
@@ -92,6 +94,12 @@
             <variable group="octColors" name="octCol8" displayName="Octave 6" type="colour" value="0xFFFFFF" />
             <variable group="octColors" name="octCol9" displayName="Octave 7" type="colour" value="0xFFFFFF" />
             <variable group="octColors" name="octCol10" displayName="Octave 8" type="colour" value="0xFFFFFF" />
+            <variable group="bendPress" name="bendPressColors" displayName="Held Keys Follow (0 nothing, 1 pitch bend, 2 pressure, 3 both)" type="int" min="0" max="3" value="0" />
+            <variable group="bendPress" name="bendDownCol" displayName="Pitch Bend Down" type="colour" value="0xDB6108" />
+            <variable group="bendPress" name="bendCenterCol" displayName="Pitch Bend Center" type="colour" value="0xFFFFFF" />
+            <variable group="bendPress" name="bendUpCol" displayName="Pitch Bend Up" type="colour" value="0x0099FF" />
+            <variable group="bendPress" name="pressOffCol" displayName="No Pressure" type="colour" value="0xFFFFFF" />
+            <variable group="bendPress" name="pressFullCol" displayName="Full Pressure" type="colour" value="0xDB6108" />
     </variables>
 </metadata>
 */
@@ -110,6 +118,8 @@ const int minOct = -2;
 const int HCOL = 0x48434F4C; //host color mode: p2 = 1 on, 0 off, which puts the saved colors back
 const int KCOL = 0x4B434F4C; //key color, in host color mode: p2 = key 0-23 for its off color, 256 + key for its on color; p3 = 0xRRGGBBAA
 const int OCOL = 0x4F434F4C; //octave button color, in host color mode: p2 = octave -2 to 8; p3 = 0xRRGGBBAA
+const int BCOL = 0x42434F4C; //pitch bend color, in host color mode: p2 = 0 down, 1 center, 2 up; p3 = 0xRRGGBBAA
+const int PCOL = 0x50434F4C; //pressure color, in host color mode: p2 = 0 off, 1 full; p3 = 0xRRGGBBAA
 const int GOCT = 0x474F4354; //get octave: answered with GOCT, the octave (-2 to 8) and the note key 1 plays
 
 //Host color mode, for other software: the colors a host sends replace Dashboard's, which are read again when it ends
@@ -128,10 +138,13 @@ int nextChan; //member channel the allocator tries first
 int chanBend[16];
 int chanPress[16];
 
-//2D array for on and off colors, octave button colors (10), key state, key pitch bend flags, key color fading,
-//the lit color (on color with brightness and velocity applied, worked out when the key lights),
+//Pitch bend colors down, center and up, then pressure colors off and full
+int bendPressCol[5];
+
+//2D array for on and off colors, octave button colors (11), key state, the key's latest pitch bend (+1, 0 until it
+//moves), key color fading, the lit color (worked out when the key lights, and as it bends or its pressure changes),
 //the note (+1, 0 when silent) and channel captured at strike so a lift still matches its note after an octave change,
-//the off color with brightness applied (worked out when the lights turn on) and the last poly aftertouch sent
+//the off color with brightness applied (worked out when the lights turn on) and the key's latest pressure (-1 until pressed)
 //Column 11 is the key state from the host, kept apart from a finger's (column 3) so neither can darken a key the other still has on
 const int keyCols[maxKeys][12];
 
@@ -223,7 +236,30 @@ int getNote(int key)
 //On color with brightness and velocity brightness applied
 int litCol(int index, int vel)
 {
-    int c = keyCols[index][0];
+    return onScaled(keyCols[index][0], vel);
+}
+
+//A finger-held key's color while bendPressColors is on: pressure (2) mixes from its off color to its full color, and a
+//pitch bend (1) then moves that, or the center color, toward the down or up color, all the way at the key's full travel
+int heldCol(int i)
+{
+    int c = bendPressCol[1];
+
+    if (bendPressColors & 2)
+        c = blendCol(bendPressCol[3], bendPressCol[4], max(0, keyCols[i][10]) * 100 / 127);
+
+    if ((bendPressColors & 1) && keyCols[i][4] > 0)
+    {
+        int d = keyCols[i][4] - 8193;
+        c = blendCol(c, d < 0 ? bendPressCol[0] : bendPressCol[2], abs(d) * 100 / 8192);
+    }
+
+    return onScaled(c, keyCols[i][3]);
+}
+
+//A lit color: the on brightness applied, and velocity brightness if it's on
+int onScaled(int c, int vel)
+{
     float vB = 1.0;
 
     if (toggleVB)
@@ -253,7 +289,7 @@ void cacheKey(int i)
     keyCols[i][9] = offCol(i);
 
     if (keyCols[i][3])
-        keyCols[i][6] = litCol(i, keyCols[i][3]);
+        keyCols[i][6] = bendPressColors != 0 ? heldCol(i) : litCol(i, keyCols[i][3]);
     else if (keyCols[i][11])
         keyCols[i][6] = litCol(i, keyCols[i][11]);
 }
@@ -346,6 +382,13 @@ void updateCols()
     keyCols[8][2] = octCol8; 
     keyCols[9][2] = octCol9;
     keyCols[10][2] = octCol10;
+
+    //Pitch Bend and Pressure Colors
+    bendPressCol[0] = bendDownCol;
+    bendPressCol[1] = bendCenterCol;
+    bendPressCol[2] = bendUpCol;
+    bendPressCol[3] = pressOffCol;
+    bendPressCol[4] = pressFullCol;
 }
 
 //A key is lit while a finger (column 3) or the host (column 11) has it on. Each source sets only its own column, so
@@ -358,7 +401,7 @@ void setKeyLit(int index, int column, int vel)
     keyCols[index][column] = vel;
 
     if (vel > 0)
-        keyCols[index][6] = litCol(index, vel);
+        keyCols[index][6] = keyCols[index][3] > 0 && bendPressColors != 0 ? heldCol(index) : litCol(index, vel);
     else if (keyCols[index][3] > 0 || keyCols[index][11] > 0)
         cacheKey(index);
     else if (fadeColors && wasLit)
@@ -409,9 +452,9 @@ void handleMessage(int p1, int p2, int p3)
     }
     else if (hostMode)
     {
-        //KCOL and OCOL: p2 is the key or octave, p3 the color. Arrays aren't bounds checked, so only keys 0-23 and
-        //octaves -2 to 8 may become rows. 0xRRGGBBAA to ARGB: >> copies the sign bit down when red is 0x80 or more,
-        //hence the mask
+        //KCOL, OCOL, BCOL and PCOL: p2 picks the key, octave or color, p3 is the color. Arrays aren't bounds checked, so
+        //only keys 0-23, octaves -2 to 8 and the colors each has may become indexes. 0xRRGGBBAA to ARGB: >> copies the
+        //sign bit down when red is 0x80 or more, hence the mask
         int argb = ((p3 & 0xFF) << 24) | ((p3 >> 8) & 0x00FFFFFF);
         int key = p2 & 255;
 
@@ -425,6 +468,12 @@ void handleMessage(int p1, int p2, int p3)
         else if (p1 == OCOL && p2 >= minOct && p2 <= maxOct)
         {
             keyCols[p2 + 2][2] = argb;
+        }
+        else if ((p1 == BCOL && p2 >= 0 && p2 < 3) || (p1 == PCOL && p2 >= 0 && p2 < 2))
+        {
+            //Keys held now take the new color at once
+            bendPressCol[p1 == BCOL ? p2 : 3 + p2] = argb;
+            cacheCols();
         }
     }
 }
@@ -526,7 +575,6 @@ void startNote(int index, int vel)
 
     keyCols[index][7] = note + 1;
     keyCols[index][8] = ch;
-    keyCols[index][10] = -1;
 
     sendNoteOn(ch, note, vel);
 }
@@ -624,6 +672,8 @@ void keyStrike(int index, int u, int vel)
 {
     if (toggleVel) vel = fixedVel;
 
+    //A new touch has no pressure yet, which poly aftertouch and pressure colors go by
+    keyCols[index][10] = -1;
     setKeyLit(index, 3, vel);
 
     stopNote(index, 0);
@@ -635,18 +685,21 @@ void keyPress(int index, int at, int vel)
     if (keyCols[index][7] == 0)
         return;
 
+    //Column 10 holds the key's latest pressure: poly aftertouch goes out only when it changes, as do pressure colors
+    bool changed = keyCols[index][10] != at;
+    keyCols[index][10] = at;
+
     //MPE pressure is per note by way of its own channel
     if(polyAT && !mpeMode)
     {
-        if (keyCols[index][10] != at)
-        {
-            keyCols[index][10] = at;
+        if (changed)
             sendAftertouch (keyCols[index][8], keyCols[index][7] - 1, at);
-        }
     }
     else
         sendPressure(keyCols[index][8], at);
 
+    if (changed && (bendPressColors & 2))
+        keyCols[index][6] = heldCol(index);
 }
 
 void keyMove (int index, int pb, int at)
@@ -654,9 +707,18 @@ void keyMove (int index, int pb, int at)
     if (keyCols[index][7] == 0)
         return;
 
-    if(!keyCols[index][4]){keyCols[index][4] = true; cPB++;}
+    //Column 4 holds the key's latest bend + 1 once it moves, which the pitch bend counter goes by
+    bool changed = keyCols[index][4] != pb + 1;
+
+    if (!keyCols[index][4])
+        cPB++;
+
+    keyCols[index][4] = pb + 1;
 
     sendBend(keyCols[index][8], pb);
+
+    if (changed && (bendPressColors & 1))
+        keyCols[index][6] = heldCol(index);
 } 	
 
 void keyLift(int index, int u, int vel)
