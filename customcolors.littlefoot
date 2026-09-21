@@ -112,10 +112,8 @@ const int KCOL = 0x4B434F4C; //key color, in host color mode: p2 = key 0-23 for 
 const int OCOL = 0x4F434F4C; //octave button color, in host color mode: p2 = octave -2 to 8; p3 = 0xRRGGBBAA
 const int GOCT = 0x474F4354; //get octave: answered with GOCT, the octave (-2 to 8) and the note key 1 plays
 
-//Host color mode: the colors a host sends show in place of the saved ones, which they never change, until it's
-//turned off or the program restarts. A bit per key or octave says which the host has set
+//Host color mode, for other software: the colors a host sends replace Dashboard's, which are read again when it ends
 bool hostMode;
-int hostOn, hostOff, hostOct;
 
 //Declare every other array before keyCols: the compiler starts an array declared after a 2D array
 //only one row past the 2D array's start, so the two would share memory
@@ -135,8 +133,7 @@ int chanPress[16];
 //the note (+1, 0 when silent) and channel captured at strike so a lift still matches its note after an octave change,
 //the off color with brightness applied (worked out when the lights turn on) and the last poly aftertouch sent
 //Column 11 is the key state from the host, kept apart from a finger's (column 3) so neither can darken a key the other still has on
-//Columns 12 and 13 hold a host's on and off colors, and rows 11-21 of column 2 its octave button colors (host color mode)
-const int keyCols[maxKeys][14];
+const int keyCols[maxKeys][12];
 
 
 bool toggleCols;
@@ -184,25 +181,20 @@ void handleButtonDown(int index)
             cacheCols();
        
     }
-    else if (index == 1)
+    else if (index == 1 || index == 2)
     {
-        if (curOct > minOct)
+        int oct = index == 2 ? curOct + 1 : curOct - 1;
+
+        if (oct >= minOct && oct <= maxOct)
         {
-            --curOct;
-            clearHostLit();
+            curOct = oct;
+
+            //The host's notes land on keys by the octave they arrived under, so once the octave changes their note-offs
+            //resolve to other keys and would leave these lit. A key a finger holds stays lit through its own column
+            for (int i = 0; i < maxKeys; i++)
+                if (keyCols[i][11] > 0)
+                    setKeyLit(i, 11, 0);
         }
-        else
-            curOct = minOct;
-    }
-    else if (index == 2)
-    {
-        if (curOct < maxOct)
-        {
-            ++curOct;
-            clearHostLit();
-        }
-        else
-            curOct = maxOct;
     }
     
 }
@@ -221,7 +213,8 @@ int getNote(int key)
 {
     int n = (24 + (curOct * 12)) + key;
     
-    if (n >= 0 && n < 128)
+    //Never below 0: octave -2 puts key 1 on note 0
+    if (n < 128)
         return n;
     else
         return -1;
@@ -233,9 +226,6 @@ int litCol(int index, int vel)
     int c = keyCols[index][0];
     float vB = 1.0;
 
-    if (hostMode && ((hostOn >> index) & 1))
-        c = keyCols[index][12];
-
     if (toggleVB)
         vB = map(float(vel), 0.0, 127.0, 0.0, 1.0);
 
@@ -246,9 +236,6 @@ int litCol(int index, int vel)
 int offCol(int index)
 {
     int c = keyCols[index][1];
-
-    if (hostMode && ((hostOff >> index) & 1))
-        c = keyCols[index][13];
 
     return makeARGB(int(((c & 0xFF000000) >> 24) * tOff), int(((c & 0x00FF0000) >> 16) * tOff), int(((c & 0x0000FF00) >> 8) * tOff), int((c & 0x000000FF) * tOff));
 }
@@ -288,6 +275,13 @@ int blendCol(int col1, int col2, int amount)
 
 void updateCols()
 {
+    tOn = map(float(onBright), 0.0, 100.0, 0.0, 1.0);
+    tOff = map(float(offBright), 0.0, 100.0, 0.0, 1.0);
+
+    //A host's colors (host color mode) replace these until it turns off
+    if (hostMode)
+        return;
+
     //On Colors
     keyCols[0][0] = keyOnCol0;
     keyCols[1][0] = keyOnCol1;
@@ -352,10 +346,6 @@ void updateCols()
     keyCols[8][2] = octCol8; 
     keyCols[9][2] = octCol9;
     keyCols[10][2] = octCol10;
-    
-    tOn = map(float(onBright), 0.0, 100.0, 0.0, 1.0);
-    tOff = map(float(offBright), 0.0, 100.0, 0.0, 1.0);
-
 }
 
 //A key is lit while a finger (column 3) or the host (column 11) has it on. Each source sets only its own column, so
@@ -369,31 +359,10 @@ void setKeyLit(int index, int column, int vel)
 
     if (vel > 0)
         keyCols[index][6] = litCol(index, vel);
-    else if (keyCols[index][3] > 0)
-        keyCols[index][6] = litCol(index, keyCols[index][3]);
-    else if (keyCols[index][11] > 0)
-        keyCols[index][6] = litCol(index, keyCols[index][11]);
+    else if (keyCols[index][3] > 0 || keyCols[index][11] > 0)
+        cacheKey(index);
     else if (fadeColors && wasLit)
         keyCols[index][5] = 100;
-}
-
-void lightKey(int index, int vel)
-{
-    setKeyLit(index, 3, vel);
-}
-
-void unlightKey(int index)
-{
-    setKeyLit(index, 3, 0);
-}
-
-//The host's notes land on keys by the octave they arrived under, so once the octave changes their note-offs resolve
-//to other keys and would leave these lit. A key a finger holds stays lit through its own column
-void clearHostLit()
-{
-    for (int i = 0; i < maxKeys; i++)
-        if (keyCols[i][11] > 0)
-            setKeyLit(i, 11, 0);
 }
 
 //MIDI Handling
@@ -429,66 +398,35 @@ void handleMessage(int p1, int p2, int p3)
     }
     else if (p1 == HCOL)
     {
-        hostMode = p2 != 0;
-
-        //Off forgets the host's colors, so the saved ones show again and the next session starts from them
-        if (!hostMode)
+        //Dashboard's colors are read again when it turns off, and when it turns on, in case no frame has yet
+        if (hostMode != (p2 != 0))
         {
-            hostOn = 0;
-            hostOff = 0;
-            hostOct = 0;
+            hostMode = false;
+            updateCols();
             cacheCols();
+            hostMode = p2 != 0;
         }
     }
     else if (hostMode)
     {
-        setHostCol(p1, p2, p3);
-    }
-}
+        //KCOL and OCOL: p2 is the key or octave, p3 the color. Arrays aren't bounds checked, so only keys 0-23 and
+        //octaves -2 to 8 may become rows. 0xRRGGBBAA to ARGB: >> copies the sign bit down when red is 0x80 or more,
+        //hence the mask
+        int argb = ((p3 & 0xFF) << 24) | ((p3 >> 8) & 0x00FFFFFF);
+        int key = p2 & 255;
 
-//KCOL and OCOL. Arrays aren't bounds checked, so only keys 0-23 and octaves -2 to 8 may become rows
-void setHostCol(int id, int target, int rgba)
-{
-    //0xRRGGBBAA to ARGB; >> copies the sign bit down when red is 0x80 or more, hence the mask
-    int argb = ((rgba & 0xFF) << 24) | ((rgba >> 8) & 0x00FFFFFF);
-    int key = target & 255;
-
-    if (id == KCOL && target >= 0 && target < 256 + maxKeys && key < maxKeys)
-    {
-        if (target < 256)
+        if (p1 == KCOL && p2 >= 0 && p2 < 256 + maxKeys && key < maxKeys)
         {
-            keyCols[key][13] = argb;
-            hostOff = hostOff | (1 << key);
+            keyCols[key][p2 < 256 ? 1 : 0] = argb;
+
+            //Keys draw colors worked out ahead, the octave buttons read theirs as they draw
+            cacheKey(key);
         }
-        else
+        else if (p1 == OCOL && p2 >= minOct && p2 <= maxOct)
         {
-            keyCols[key][12] = argb;
-            hostOn = hostOn | (1 << key);
+            keyCols[p2 + 2][2] = argb;
         }
-
-        //Keys draw colors worked out ahead
-        cacheKey(key);
     }
-    else if (id == OCOL && target >= minOct && target <= maxOct)
-    {
-        //The octave buttons read theirs as they draw
-        keyCols[target + 13][2] = argb;
-        hostOct = hostOct | (1 << (target + 2));
-    }
-}
-
-//0 = single channel, 1 = MPE lower zone, 2 = MPE upper zone
-int getZone()
-{
-    if (!mpeMode)
-        return 0;
-
-    return mpeUpperZone ? 2 : 1;
-}
-
-int getManagerChan()
-{
-    return mpeUpperZone ? 15 : 0;
 }
 
 //Member channels count inward from the manager channel
@@ -502,10 +440,14 @@ int getMemberChan(int i)
 //With every channel busy, share the one with the fewest, oldest notes
 int allocChannel()
 {
+    //Where the zone's member channels start, and which way they count
+    int first = mpeUpperZone ? 14 : 1;
+    int step = mpeUpperZone ? -1 : 1;
+
     for (int n = 0; n < mpeMembers; n++)
     {
         int i = (nextChan + n) % mpeMembers;
-        int ch = mpeUpperZone ? 14 - i : 1 + i;
+        int ch = first + step * i;
 
         if (chanNotes[ch] == 0)
         {
@@ -515,8 +457,7 @@ int allocChannel()
     }
 
     int best = -1;
-    int c = mpeUpperZone ? 14 : 1;
-    int step = mpeUpperZone ? -1 : 1;
+    int c = first;
 
     for (int j = 0; j < mpeMembers; j++)
     {
@@ -559,21 +500,6 @@ void sendRPN(int ch, int param, int value)
     //Deselect, so a later data entry message can't change it
     sendCC(ch, 101, 127);
     sendCC(ch, 100, 127);
-}
-
-//One step per frame (~25 Hz) so announcing all member channels doesn't flood the MIDI link
-void sendZoneStep(int bend)
-{
-    //The MPE Configuration Message resets member bend ranges to 48, so it goes first
-    if (mcmStep == 0)
-        sendRPN(getManagerChan(), 6, mpeMembers);
-    else
-        sendRPN(getMemberChan(mcmStep - 1), 0, bend);
-
-    mcmStep++;
-
-    if (mcmStep > mpeMembers)
-        mcmStep = -1;
 }
 
 void startNote(int index, int vel)
@@ -622,31 +548,27 @@ void stopNote(int index, int vel)
     chanStamp[ch] = stampCount;
 }
 
-void releaseAllNotes()
-{
-    for (int i = 0; i < maxKeys; i++)
-    {
-        if (keyCols[i][7])
-        {
-            stopNote(i, 0);
-            sendBend(keyCols[i][8], 8192);
-        }
-
-        keyCols[i][4] = false;
-    }
-
-    cPB = 0;
-}
-
 void checkMidiConfig()
 {
-    int zone = getZone();
+    //0 = single channel, 1 = MPE lower zone, 2 = MPE upper zone
+    int zone = mpeMode ? (mpeUpperZone ? 2 : 1) : 0;
     int bend = getLocalConfig(configItemId_pbrange);
 
     //Notes started under the old settings would otherwise hang or land on the wrong channels
     if (zone != lastZone || mpeMembers != lastMembers || midiChan != lastChan)
     {
-        releaseAllNotes();
+        for (int i = 0; i < maxKeys; i++)
+        {
+            if (keyCols[i][7])
+            {
+                stopNote(i, 0);
+                sendBend(keyCols[i][8], 8192);
+            }
+
+            keyCols[i][4] = false;
+        }
+
+        cPB = 0;
 
         //0 member channels tells the receiver the old zone is gone
         if (lastZone > 0 && zone != lastZone)
@@ -682,7 +604,19 @@ void checkMidiConfig()
     if (zone == 0)
         mcmStep = -1;
     else if (mcmStep >= 0)
-        sendZoneStep(bend);
+    {
+        //One step per frame (~25 Hz) so announcing all member channels doesn't flood the MIDI link.
+        //The MPE Configuration Message resets member bend ranges to 48, so it goes first
+        if (mcmStep == 0)
+            sendRPN(mpeUpperZone ? 15 : 0, 6, mpeMembers);
+        else
+            sendRPN(getMemberChan(mcmStep - 1), 0, bend);
+
+        mcmStep++;
+
+        if (mcmStep > mpeMembers)
+            mcmStep = -1;
+    }
 }
 
 
@@ -690,7 +624,7 @@ void keyStrike(int index, int u, int vel)
 {
     if (toggleVel) vel = fixedVel;
 
-    lightKey(index, vel);
+    setKeyLit(index, 3, vel);
 
     stopNote(index, 0);
     startNote(index, vel);
@@ -727,7 +661,7 @@ void keyMove (int index, int pb, int at)
 
 void keyLift(int index, int u, int vel)
 {
-    unlightKey(index);
+    setKeyLit(index, 3, 0);
     if(keyCols[index][4]){keyCols[index][4] = false; cPB--;}
 
     stopNote(index, vel);
@@ -740,21 +674,10 @@ void keyLift(int index, int u, int vel)
 
 void renderOctaveBtns()
 {
-    int row = curOct + 2;
+    int c = keyCols[curOct + 2][2];
 
-    //The host's octave colors are 11 rows further down
-    if (hostMode && ((hostOct >> row) & 1))
-        row += 11;
-
-    if (curOct > minOct)
-        fillPixel (keyCols[row][2], 0, 1);
-    else
-        fillPixel (0, 0, 1);
-
-    if (curOct < maxOct)
-        fillPixel (keyCols[row][2], 1, 1);
-    else
-        fillPixel (0, 1, 1);
+    fillPixel (curOct > minOct ? c : 0, 0, 1);
+    fillPixel (curOct < maxOct ? c : 0, 1, 1);
 }
 
 //Draws the colors worked out when keys light and the lights turn on; only keys that are fading blend

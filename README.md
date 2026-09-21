@@ -17,10 +17,10 @@ A plug-in or other host can recolor the keys and octave buttons live during a se
 | `OCOL` octave button color | `0x4F434F4C` | octave, -2 to 8 | color, `0xRRGGBBAA` |
 | `GOCT` get octave | `0x474F4354` | unused | unused |
 
-- `KCOL` and `OCOL` work only in host color mode, which is off whenever the script starts. While it's on, each key and octave the host has colored shows the host's color, and the rest keep their saved colors. The host's colors never change the saved ones: turning the mode off puts the saved colors back everywhere, and turning it on again starts from them. Turning it on while it's on keeps the host's colors.
+- Host color mode is for other software, such as a plug-in, and is off whenever the script starts. `KCOL` and `OCOL` work only while it's on: each key and octave the host colors shows the host's color, and the rest keep their saved colors. Nothing is saved: turning the mode off puts the saved colors back everywhere, and turning it on again starts from them. Turning it on while it's on keeps the host's colors.
 - The script answers `GOCT` with `GOCT`, the octave the keys are on (-2 to 8) and the note Key 1 plays (24 + 12 × octave). It sends nothing else, because everything it sends also reaches the MIDI port as SysEx, which a DAW may record.
-- Host colors show with the brightness settings, and the LEDs ignore alpha, as with Dashboard's colors. Messages with a key, octave or id out of range are ignored.
-- The web editor's program (`editor/`) takes the same messages. The editor never sees a host's colors: it reads and saves only the saved ones.
+- Host colors show with the brightness settings, and the LEDs ignore alpha, as with Dashboard's colors. Colors changed in Dashboard during host color mode show once it's off. Messages with a key, octave or id out of range are ignored.
+- The web editor's program (`editor/`) takes the same messages. The web editor takes the keyboard over: connecting it, previewing or discarding a preview ends host color mode and puts the saved colors back.
 
 A message is a 23-byte SysEx: `F0 00 21 10 77`, the keyboard's index from its topology message (a Piano M on its own reported 19, `13`), 15 bytes holding the message type 3 (7 bits) and the three ints (32 bits each) as one bit stream, least significant bit first and 7 bits to a byte, a checksum, and `F7`. These turn host color mode on, then set Key 4's off color to red:
 
