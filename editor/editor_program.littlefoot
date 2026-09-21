@@ -125,7 +125,7 @@ void initialise()
 
 void handleButtonDown(int index)
 {
-    if (index == 0)
+    if (!index)
     {
         toggleCols = toggleCols ? false : true;
     }
@@ -140,7 +140,7 @@ void handleButtonDown(int index)
             //The host's notes land on keys by the octave they arrived under, so once the octave changes their note-offs
             //resolve to other keys and would leave these lit. A key a finger holds stays lit through its own column
             for (int i = 0; i < maxKeys; i++)
-                if (keyCols[i][11] > 0)
+                if (keyCols[i][11])
                     setKeyLit(i, 11, 0);
         }
     }
@@ -193,7 +193,7 @@ int onScaled(int c, int vel)
 {
     float vB = 1.0;
 
-    if (toggleVB != 0)
+    if (toggleVB)
         vB = map(float(vel), 0.0, 127.0, 0.0, 1.0);
 
     return makeARGB(int((((c & 0xFF000000) >> 24) * tOn) * vB), int((((c & 0x00FF0000) >> 16) * tOn) * vB), int((((c & 0x0000FF00) >> 8) * tOn) * vB), int(((c & 0x000000FF) * tOn) * vB));
@@ -538,7 +538,7 @@ void handleMessage(int p1, int p2, int p3)
     else if (p1 == HCOL)
     {
         //Turning it off loads the colors again
-        if (hostMode && p2 == 0)
+        if (hostMode && !p2)
             loadValues();
 
         hostMode = p2 != 0;
@@ -562,7 +562,7 @@ void handleMessage(int p1, int p2, int p3)
         {
             keyCols[p2 + 2][2] = argb;
         }
-        else if ((p1 == BCOL && p2 >= 0 && p2 < 2) || (p1 == PCOL && p2 == 0))
+        else if ((p1 == BCOL && p2 >= 0 && p2 < 2) || (p1 == PCOL && !p2))
         {
             //Keys held now take the new color at once
             bendPressCol[p1 == BCOL ? p2 : 2] = argb;
@@ -583,7 +583,7 @@ void setKeyLit(int index, int column, int vel)
     //With the setting off, the latest note-on's velocity sets the color, even a host's on a key a finger holds
     if (vel && !bendPressColors)
         keyCols[index][6] = bendPressLit(index, 0, 0, vel & 127);
-    else if (!cacheLit(index) && fadeColors != 0 && wasLit)
+    else if (!cacheLit(index) && fadeColors && wasLit)
         keyCols[index][5] = 100;
 }
 
@@ -649,7 +649,7 @@ void handleMIDI (int byte0, int byte1, int byte2)
 //Member channels count inward from the manager channel
 int getMemberChan(int i)
 {
-    return mpeUpperZone != 0 ? 14 - i : 1 + i;
+    return mpeUpperZone ? 14 - i : 1 + i;
 }
 
 //Round robin over idle channels: a just-released channel comes round last, so its release tail isn't bent
@@ -658,15 +658,15 @@ int getMemberChan(int i)
 int allocChannel()
 {
     //Where the zone's member channels start, and which way they count
-    int first = mpeUpperZone != 0 ? 14 : 1;
-    int step = mpeUpperZone != 0 ? -1 : 1;
+    int first = mpeUpperZone ? 14 : 1;
+    int step = mpeUpperZone ? -1 : 1;
 
     for (int n = 0; n < mpeMembers; n++)
     {
         int i = (nextChan + n) % mpeMembers;
         int ch = first + step * i;
 
-        if (chanNotes[ch] == 0)
+        if (!chanNotes[ch])
         {
             nextChan = i + 1;
             return ch;
@@ -711,7 +711,7 @@ void sendRPN(int ch, int param, int value)
     sendCC(ch, 100, param);
     sendCC(ch, 6, value);
 
-    if (param == 0)
+    if (!param)
         sendCC(ch, 38, 0); //bend range cents
 
     //Deselect, so a later data entry message can't change it
@@ -728,7 +728,7 @@ void startNote(int index, int vel)
 
     int ch = midiChan - 1;
 
-    if (mpeMode != 0)
+    if (mpeMode)
     {
         ch = allocChannel();
 
@@ -749,7 +749,7 @@ void startNote(int index, int vel)
 
 void stopNote(int index, int vel)
 {
-    if (keyCols[index][7] == 0)
+    if (!keyCols[index][7])
         return;
 
     int ch = keyCols[index][8];
@@ -757,7 +757,7 @@ void stopNote(int index, int vel)
     sendNoteOff(ch, keyCols[index][7] - 1, vel);
     keyCols[index][7] = 0;
 
-    if (chanNotes[ch] > 0)
+    if (chanNotes[ch])
         chanNotes[ch] = chanNotes[ch] - 1;
 
     stampCount++;
@@ -767,7 +767,7 @@ void stopNote(int index, int vel)
 void checkMidiConfig()
 {
     //0 = single channel, 1 = MPE lower zone, 2 = MPE upper zone
-    int zone = mpeMode != 0 ? (mpeUpperZone != 0 ? 2 : 1) : 0;
+    int zone = mpeMode ? (mpeUpperZone ? 2 : 1) : 0;
     int bend = getLocalConfig(configItemId_pbrange);
 
     //Notes started under the old settings would otherwise hang or land on the wrong channels
@@ -817,14 +817,14 @@ void checkMidiConfig()
         hostOffFrames = 0;
     }
 
-    if (zone == 0)
+    if (!zone)
         mcmStep = -1;
     else if (mcmStep >= 0)
     {
         //One step per frame (~25 Hz) so announcing all member channels doesn't flood the MIDI link.
         //The MPE Configuration Message resets member bend ranges to 48, so it goes first
-        if (mcmStep == 0)
-            sendRPN(mpeUpperZone != 0 ? 15 : 0, 6, mpeMembers);
+        if (!mcmStep)
+            sendRPN(mpeUpperZone ? 15 : 0, 6, mpeMembers);
         else
             sendRPN(getMemberChan(mcmStep - 1), 0, bend);
 
@@ -838,7 +838,7 @@ void checkMidiConfig()
 
 void keyStrike(int index, int u, int vel)
 {
-    if (toggleVel != 0) vel = fixedVel;
+    if (toggleVel) vel = fixedVel;
 
     //A new touch has no pressure yet, which poly aftertouch and pressure colors go by
     keyCols[index][10] = -1;
@@ -850,7 +850,7 @@ void keyStrike(int index, int u, int vel)
 
 void keyPress(int index, int at, int vel)
 {
-    if (keyCols[index][7] == 0)
+    if (!keyCols[index][7])
         return;
 
     //Column 10 holds the key's latest pressure: poly aftertouch goes out only when it changes, as do pressure colors
@@ -858,7 +858,7 @@ void keyPress(int index, int at, int vel)
     keyCols[index][10] = at;
 
     //MPE pressure is per note by way of its own channel
-    if(polyAT != 0 && mpeMode == 0)
+    if(polyAT && !mpeMode)
     {
         if (changed)
             sendAftertouch (keyCols[index][8], keyCols[index][7] - 1, at);
@@ -872,7 +872,7 @@ void keyPress(int index, int at, int vel)
 
 void keyMove (int index, int pb, int at)
 {
-    if (keyCols[index][7] == 0)
+    if (!keyCols[index][7])
         return;
 
     //Column 4 holds the key's latest bend + 1 once it moves, which the pitch bend counter goes by
@@ -898,7 +898,7 @@ void keyLift(int index, int u, int vel)
 
     //Single channel: reset PitchBend if counter is zero
     //MPE: leave it so the release tail keeps its pitch, the channel's next note clears it
-    if (mpeMode == 0 && cPB == 0)
+    if (!mpeMode && !cPB)
         sendBend(midiChan - 1, 8192);
 }
 
