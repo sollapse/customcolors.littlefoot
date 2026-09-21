@@ -106,6 +106,17 @@ const int maxKeys = 24;
 const int maxOct = 8;
 const int minOct = -2;
 
+//Messages a host can send as BLOCKS program events; each id spells its name in ASCII
+const int HCOL = 0x48434F4C; //host color mode: p2 = 1 on, 0 off, which puts the saved colors back
+const int KCOL = 0x4B434F4C; //key color, in host color mode: p2 = key 0-23 for its off color, 256 + key for its on color; p3 = 0xRRGGBBAA
+const int OCOL = 0x4F434F4C; //octave button color, in host color mode: p2 = octave -2 to 8; p3 = 0xRRGGBBAA
+const int GOCT = 0x474F4354; //get octave: answered with GOCT, the octave (-2 to 8) and the note key 1 plays
+
+//Host color mode: the colors a host sends show in place of the saved ones, which they never change, until it's
+//turned off or the program restarts. A bit per key or octave says which the host has set
+bool hostMode;
+int hostOn, hostOff, hostOct;
+
 //Declare every other array before keyCols: the compiler starts an array declared after a 2D array
 //only one row past the 2D array's start, so the two would share memory
 
@@ -124,7 +135,8 @@ int chanPress[16];
 //the note (+1, 0 when silent) and channel captured at strike so a lift still matches its note after an octave change,
 //the off color with brightness applied (worked out when the lights turn on) and the last poly aftertouch sent
 //Column 11 is the key state from the host, kept apart from a finger's (column 3) so neither can darken a key the other still has on
-const int keyCols[maxKeys][12];
+//Columns 12 and 13 hold a host's on and off colors, and rows 11-21 of column 2 its octave button colors (host color mode)
+const int keyCols[maxKeys][14];
 
 
 bool toggleCols;
@@ -221,6 +233,9 @@ int litCol(int index, int vel)
     int c = keyCols[index][0];
     float vB = 1.0;
 
+    if (hostMode && ((hostOn >> index) & 1))
+        c = keyCols[index][12];
+
     if (toggleVB)
         vB = map(float(vel), 0.0, 127.0, 0.0, 1.0);
 
@@ -232,6 +247,9 @@ int offCol(int index)
 {
     int c = keyCols[index][1];
 
+    if (hostMode && ((hostOff >> index) & 1))
+        c = keyCols[index][13];
+
     return makeARGB(int(((c & 0xFF000000) >> 24) * tOff), int(((c & 0x00FF0000) >> 16) * tOff), int(((c & 0x0000FF00) >> 8) * tOff), int((c & 0x000000FF) * tOff));
 }
 
@@ -239,14 +257,18 @@ int offCol(int index)
 void cacheCols()
 {
     for (int i = 0; i < maxKeys; i++)
-    {
-        keyCols[i][9] = offCol(i);
+        cacheKey(i);
+}
 
-        if (keyCols[i][3])
-            keyCols[i][6] = litCol(i, keyCols[i][3]);
-        else if (keyCols[i][11])
-            keyCols[i][6] = litCol(i, keyCols[i][11]);
-    }
+//A key's drawn colors: its off color, and its lit color while a finger or the host has it on
+void cacheKey(int i)
+{
+    keyCols[i][9] = offCol(i);
+
+    if (keyCols[i][3])
+        keyCols[i][6] = litCol(i, keyCols[i][3]);
+    else if (keyCols[i][11])
+        keyCols[i][6] = litCol(i, keyCols[i][11]);
 }
 
 //Blend two ARGB colors, amount 0-100 is the share of col2
@@ -396,6 +418,63 @@ void handleMIDI (int byte0, int byte1, int byte2)
         setKeyLit(key, 11, byte2);
     else
         setKeyLit(key, 11, 0);
+}
+
+//Host messages. Only GOCT is answered: anything the program sends also reaches the MIDI port as SysEx, which a DAW may record
+void handleMessage(int p1, int p2, int p3)
+{
+    if (p1 == GOCT)
+    {
+        sendMessageToHost(GOCT, curOct, getNote(0));
+    }
+    else if (p1 == HCOL)
+    {
+        hostMode = p2 != 0;
+
+        //Off forgets the host's colors, so the saved ones show again and the next session starts from them
+        if (!hostMode)
+        {
+            hostOn = 0;
+            hostOff = 0;
+            hostOct = 0;
+            cacheCols();
+        }
+    }
+    else if (hostMode)
+    {
+        setHostCol(p1, p2, p3);
+    }
+}
+
+//KCOL and OCOL. Arrays aren't bounds checked, so only keys 0-23 and octaves -2 to 8 may become rows
+void setHostCol(int id, int target, int rgba)
+{
+    //0xRRGGBBAA to ARGB; >> copies the sign bit down when red is 0x80 or more, hence the mask
+    int argb = ((rgba & 0xFF) << 24) | ((rgba >> 8) & 0x00FFFFFF);
+    int key = target & 255;
+
+    if (id == KCOL && target >= 0 && target < 256 + maxKeys && key < maxKeys)
+    {
+        if (target < 256)
+        {
+            keyCols[key][13] = argb;
+            hostOff = hostOff | (1 << key);
+        }
+        else
+        {
+            keyCols[key][12] = argb;
+            hostOn = hostOn | (1 << key);
+        }
+
+        //Keys draw colors worked out ahead
+        cacheKey(key);
+    }
+    else if (id == OCOL && target >= minOct && target <= maxOct)
+    {
+        //The octave buttons read theirs as they draw
+        keyCols[target + 13][2] = argb;
+        hostOct = hostOct | (1 << (target + 2));
+    }
 }
 
 //0 = single channel, 1 = MPE lower zone, 2 = MPE upper zone
@@ -661,13 +740,19 @@ void keyLift(int index, int u, int vel)
 
 void renderOctaveBtns()
 {
+    int row = curOct + 2;
+
+    //The host's octave colors are 11 rows further down
+    if (hostMode && ((hostOct >> row) & 1))
+        row += 11;
+
     if (curOct > minOct)
-        fillPixel (keyCols[curOct + 2][2], 0, 1);
+        fillPixel (keyCols[row][2], 0, 1);
     else
         fillPixel (0, 0, 1);
 
     if (curOct < maxOct)
-        fillPixel (keyCols[curOct + 2][2], 1, 1);
+        fillPixel (keyCols[row][2], 1, 1);
     else
         fillPixel (0, 1, 1);
 }
