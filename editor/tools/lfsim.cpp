@@ -74,6 +74,7 @@ static const std::map<std::string, Impl> impls = {
     { "isConnectedToHost/b",      +[] (void*, const int32*)   -> int32 { return hostConnected ? 1 : 0; } },
     { "fillPixel/viii",           +[] (void*, const int32* a) -> int32 { std::printf ("    LED %d,%d %08X\n", a[1], a[2], (uint32) a[0]); return 0; } },
     { "clearDisplay/v",           +[] (void*, const int32*)   -> int32 { return 0; } },
+    { "abs/ii",                   +[] (void*, const int32* a) -> int32 { return a[0] < 0 ? -a[0] : a[0]; } },
     { "min/iii",                  +[] (void*, const int32* a) -> int32 { return std::min (a[0], a[1]); } },
     { "max/iii",                  +[] (void*, const int32* a) -> int32 { return std::max (a[0], a[1]); } },
     { "clamp/iiii",               +[] (void*, const int32* a) -> int32 { return std::max (a[0], std::min (a[1], a[2])); } },
