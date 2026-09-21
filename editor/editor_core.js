@@ -40,11 +40,12 @@ const SETTINGS = [
     { name: 'pressureSensitivity', min: 0, max: 127, def: 100, config: 13 },
     { name: 'liftSensitivity',     min: 0, max: 127, def: 100, config: 14 },
     { name: 'brightness',          min: 0, max: 100, def: 100, config: 36 },
-    // What held keys' colors follow: 0 nothing, 1 pitch bend, 2 pressure, 3 both. Version 1 files don't have it
+    // What keys' colors follow, held or lit by incoming notes: 0 nothing, 1 pitch bend, 2 pressure, 3 both. Version 1 files
+    // don't have it
     { name: 'bendPressColors',     min: 0, max: 3,   def: 0, since: 2 }
 ];
 
-// The pitch bend colors (down, up) and the full pressure color follow the settings; held keys start from their on colors
+// The pitch bend colors (down, up) and the full pressure color follow the settings; keys start from their on colors
 const BEND_COUNT = 2;
 const PRESSURE_COUNT = 1;
 const BEND_BASE = SETTINGS_BASE + SETTINGS.length;

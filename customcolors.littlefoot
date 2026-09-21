@@ -3,7 +3,7 @@
   by sollapse/2025
 
   Allows for customizing per-key colors for on and off states and the octave buttons, along with fading between key colors when active.
-  Held keys can follow their pitch bend and pressure in color instead.
+  Keys can follow pitch bend and pressure in color instead, from a finger's touch or from incoming MIDI.
   Outputs single channel MIDI or MPE (one lower or upper zone).
 
   Uses portions of the default ROLI LUMI Key script as a guide.
@@ -94,7 +94,7 @@
             <variable group="octColors" name="octCol8" displayName="Octave 6" type="colour" value="0xFFFFFF" />
             <variable group="octColors" name="octCol9" displayName="Octave 7" type="colour" value="0xFFFFFF" />
             <variable group="octColors" name="octCol10" displayName="Octave 8" type="colour" value="0xFFFFFF" />
-            <variable group="bendPress" name="bendPressColors" displayName="Held Keys Follow (0 nothing, 1 pitch bend, 2 pressure, 3 both)" type="int" min="0" max="3" value="0" />
+            <variable group="bendPress" name="bendPressColors" displayName="Keys Follow (0 nothing, 1 pitch bend, 2 pressure, 3 both)" type="int" min="0" max="3" value="0" />
             <variable group="bendPress" name="bendDownCol" displayName="Pitch Bend Down" type="colour" value="0xDB6108" />
             <variable group="bendPress" name="bendUpCol" displayName="Pitch Bend Up" type="colour" value="0x0099FF" />
             <variable group="bendPress" name="pressFullCol" displayName="Full Pressure" type="colour" value="0xDB6108" />
@@ -136,7 +136,7 @@ int nextChan; //member channel the allocator tries first
 int chanBend[16];
 int chanPress[16];
 
-//Pitch bend colors down and up, then the full pressure color; held keys start from their on colors
+//Pitch bend colors down and up, then the full pressure color; keys start from their on colors
 int bendPressCol[3];
 
 //2D array for on and off colors, octave button colors (11), key state, the key's latest pitch bend (+1, 0 until it
@@ -231,28 +231,24 @@ int getNote(int key)
         return -1;
 }
 
-//On color with brightness and velocity brightness applied
-int litCol(int index, int vel)
-{
-    return onScaled(keyCols[index][0], vel);
-}
-
-//A finger-held key's color while bendPressColors is on: pressure (2) mixes its on color toward the full pressure color,
-//and a pitch bend (1) then moves that toward the down or up color, all the way at the key's full travel
-int heldCol(int i)
+//Key i's lit color at a velocity, brightness settings applied: pressure (bendPressColors 2) mixes its on color toward
+//the full pressure color, then a pitch bend (1) moves that toward the down or up color, all the way at full bend.
+//pb is the bend + 1, 0 for none; at is the pressure, -1 before any, which mixes in nothing. With the setting off, the
+//on color
+int bendPressLit(int i, int pb, int at, int vel)
 {
     int c = keyCols[i][0];
 
     if (bendPressColors & 2)
-        c = blendCol(c, bendPressCol[2], max(0, keyCols[i][10]) * 100 / 127);
+        c = blendCol(c, bendPressCol[2], at * 100 / 127);
 
-    if ((bendPressColors & 1) && keyCols[i][4] > 0)
+    if ((bendPressColors & 1) && pb > 0)
     {
-        int d = keyCols[i][4] - 8193;
+        int d = pb - 8193;
         c = blendCol(c, d < 0 ? bendPressCol[0] : bendPressCol[1], abs(d) * 100 / 8192);
     }
 
-    return onScaled(c, keyCols[i][3]);
+    return onScaled(c, vel);
 }
 
 //A lit color: the on brightness applied, and velocity brightness if it's on
@@ -285,11 +281,22 @@ void cacheCols()
 void cacheKey(int i)
 {
     keyCols[i][9] = offCol(i);
+    cacheLit(i);
+}
 
-    if (keyCols[i][3])
-        keyCols[i][6] = bendPressColors != 0 ? heldCol(i) : litCol(i, keyCols[i][3]);
-    else if (keyCols[i][11])
-        keyCols[i][6] = litCol(i, keyCols[i][11]);
+//A lit key's color, from the finger holding it, or else from the host's note: column 11 packs its velocity (bits 0-6),
+//channel (7-10), pressure (11-17) and bend / 2 (18-30). Tells whether the key is lit
+bool cacheLit(int i)
+{
+    int v = keyCols[i][3];
+    int h = keyCols[i][11];
+
+    if (v)
+        keyCols[i][6] = bendPressLit(i, keyCols[i][4], keyCols[i][10], v);
+    else if (h)
+        keyCols[i][6] = bendPressLit(i, ((h >> 18) << 1) + 1, (h >> 11) & 127, h & 127);
+
+    return v || h;
 }
 
 //Blend two ARGB colors, amount 0-100 is the share of col2
@@ -392,15 +399,14 @@ void updateCols()
 void setKeyLit(int index, int column, int vel)
 {
     //A note-off for a key that's already dark (e.g. the host echoing a lift) mustn't restart its fade
-    bool wasLit = keyCols[index][3] > 0 || keyCols[index][11] > 0;
+    bool wasLit = keyCols[index][3] || keyCols[index][11];
 
     keyCols[index][column] = vel;
 
-    if (vel > 0)
-        keyCols[index][6] = keyCols[index][3] > 0 && bendPressColors != 0 ? heldCol(index) : litCol(index, vel);
-    else if (keyCols[index][3] > 0 || keyCols[index][11] > 0)
-        cacheKey(index);
-    else if (fadeColors && wasLit)
+    //With the setting off, the latest note-on's velocity sets the color, even a host's on a key a finger holds
+    if (vel && !bendPressColors)
+        keyCols[index][6] = bendPressLit(index, 0, 0, vel & 127);
+    else if (!cacheLit(index) && fadeColors && wasLit)
         keyCols[index][5] = 100;
 }
 
@@ -411,21 +417,56 @@ const int midiNoteOn          = 0x9;
 void handleMIDI (int byte0, int byte1, int byte2)
 {
     int status = (byte0 >> 4) & 0xf;
+    int ch = (byte0 & 0xf) << 7;
+    int key;
 
-    //Only notes light keys, an MPE stream coming back is mostly bend and pressure
-    if (status != midiNoteOn && status != midiNoteOff)
+    //Notes light keys; a host note keeps its channel beside its velocity, no pressure and the bend centered. Arrays
+    //aren't bounds checked, a -1 row writes into whatever precedes keyCols on the heap
+    if (status == midiNoteOn || status == midiNoteOff)
+    {
+        key = getKey (byte1);
+
+        if (key >= 0)
+            setKeyLit(key, 11, status == midiNoteOn && byte2 ? byte2 | ch | 0x40000000 : 0);
+
+        return;
+    }
+
+    //While keys follow them, pitch bend, channel pressure and poly aftertouch color the keys the host lit on the same
+    //channel, whatever the MIDI mode. Otherwise they cost next to nothing: an MPE stream coming back is mostly these
+    if (!bendPressColors)
         return;
 
-    int key = getKey (byte1);
+    //The column 11 bits the message leaves, and its value for the others: pressure, unless it's a bend
+    int keep = 0x7FFC07FF;
+    int set = byte1 << 11;
+    key = getKey (byte1);
 
-    //Arrays aren't bounds checked, a -1 row writes into whatever precedes keyCols on the heap
-    if (key < 0)
+    if (status == 0xE)
+    {
+        keep = 0x3FFFF;
+        set = (((byte2 << 7) | byte1) >> 1) << 18;
+    }
+    else if (status == 0xA)
+        set = byte2 << 11;
+    else if (status != 0xD)
         return;
 
-    if (status == midiNoteOn && byte2 > 0)
-        setKeyLit(key, 11, byte2);
-    else
-        setKeyLit(key, 11, 0);
+    for (int i = 0; i < maxKeys; i++)
+    {
+        int h = keyCols[i][11];
+
+        //Nested, as && evaluates both sides and most keys are dark
+        if (h)
+            if ((h & 0x780) == ch && (status != 0xA || i == key))
+            {
+                keyCols[i][11] = (h & keep) | set;
+
+                //A key a finger holds keeps following the finger
+                if (!keyCols[i][3])
+                    cacheLit(i);
+            }
+    }
 }
 
 //Host messages. Only GOCT is answered: anything the program sends also reaches the MIDI port as SysEx, which a DAW may record
@@ -695,7 +736,7 @@ void keyPress(int index, int at, int vel)
         sendPressure(keyCols[index][8], at);
 
     if (changed && (bendPressColors & 2))
-        keyCols[index][6] = heldCol(index);
+        cacheLit(index);
 }
 
 void keyMove (int index, int pb, int at)
@@ -714,7 +755,7 @@ void keyMove (int index, int pb, int at)
     sendBend(keyCols[index][8], pb);
 
     if (changed && (bendPressColors & 1))
-        keyCols[index][6] = heldCol(index);
+        cacheLit(index);
 } 	
 
 void keyLift(int index, int u, int vel)

@@ -278,9 +278,9 @@ details.panel summary { cursor: pointer; font-weight: 600; font-size: 15px; }
 
     <section class="panel">
         <div class="panel-head"><h2>Pitch bend and pressure</h2></div>
-        <p class="note">Keys you hold can change color as you bend and press them, starting from their on colors. Pressure mixes toward the full pressure color, and a bend moves toward the down or up color, all the way at the key's full travel. With both, pressure sets the color and a bend moves it. Keys lit by incoming notes keep their own colors.</p>
-        <div class="setting bend-press"><span class="setting-name">Held keys follow</span>
-            <select data-setting="bendPressColors" data-lights aria-label="Held keys follow">
+        <p class="note">Keys can change color with pitch bend and pressure, starting from their on colors. Pressure mixes toward the full pressure color, and a bend moves toward the down or up color, reaching it at full bend (a key's full travel). With both, pressure sets the color and the bend moves it. Keys you hold follow your playing; keys lit by incoming notes follow the pitch bend, channel pressure and poly aftertouch on their note's channel, in either MIDI mode. Set to nothing, keys keep their plain on and off colors.</p>
+        <div class="setting bend-press"><span class="setting-name">Keys follow</span>
+            <select data-setting="bendPressColors" data-lights aria-label="Keys follow">
                 <option value="0">Nothing (their on colors)</option>
                 <option value="1">Pitch bend</option>
                 <option value="2">Pressure</option>

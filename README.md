@@ -8,7 +8,7 @@
 
 ## Pitch bend and pressure colors
 
-Keys you hold can follow their pitch bend and pressure in color, chosen with Held Keys Follow (0 nothing, 1 pitch bend, 2 pressure, 3 both). A held key starts from its own on color: pressure mixes it toward the full pressure color, and a bend moves it toward the down or up color, all the way at the key's full travel. With both, pressure sets the color and a bend moves it. Keys lit by incoming notes keep their own on colors.
+Keys can change color with pitch bend and pressure, chosen with Keys Follow (0 nothing, 1 pitch bend, 2 pressure, 3 both). A key starts from its on color: pressure mixes it toward the full pressure color, and a bend moves it toward the down or up color, reaching it at full bend (a key's full travel). With both, pressure sets the color and the bend moves it. Keys you hold follow your playing; keys lit by incoming notes follow the pitch bend, channel pressure and poly aftertouch on their note's channel, in either MIDI mode. At 0, keys keep their plain on and off colors, with velocity brightness and fading as set.
 
 ## Messages from a host
 
